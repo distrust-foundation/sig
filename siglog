@@ -138,12 +138,12 @@ COMMAND="$1"
 checktools gpg openssl
 
 case "$1" in
-	detach-verify) shift;		cmd_detach-verify "$@" ;;
-	verify) shift;				cmd_verify "$@" ;;
-	manifest) shift;			cmd_manifest "$@" ;;
-	sign) shift;			    cmd_sign "$@" ;;
-	version|--version) shift;	cmd_version "$@" ;;
-	help|--help) shift;			cmd_usage "$@" ;;
-	*)							cmd_usage "$@" ;;
+	detach-verify) shift;       cmd_detach-verify "$@" ;;
+	verify) shift;              cmd_verify "$@" ;;
+	manifest) shift;            cmd_manifest "$@" ;;
+	sign) shift;                cmd_sign "$@" ;;
+	version|--version) shift;   cmd_version "$@" ;;
+	help|--help) shift;         cmd_usage "$@" ;;
+	*)                          cmd_usage "$@" ;;
 esac
 exit 0
