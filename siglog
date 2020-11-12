@@ -65,12 +65,13 @@ verify_file() {
 }
 
 cmd_manifest() {
+	#TODO: If this is a git repo, use git to decide what files go in manifest
 	mkdir -p .siglog
 	find . \
-	    -type f \
+		-type f \
 		-not -path "./.git/*" \
 		-not -path "./.siglog/*" \
-	    -exec openssl sha256 -r {} \; \
+		-exec openssl sha256 -r {} \; \
 	| sed 's/ \*/ /g' \
 	| LC_ALL=C sort -k2 \
 	> .siglog/manifest.txt
