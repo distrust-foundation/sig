@@ -1,0 +1,149 @@
+#! /usr/bin/env bash
+set -e
+
+die() {
+	echo "$@" >&2
+	exit 1
+}
+
+gpg_env(){
+	GNUPGHOME=$(mktemp -d -p /dev/shm/); export GNUPGHOME
+	killall gpg-agent 2> /dev/null
+	gpg-agent --daemon --extra-socket "$GNUPGHOME/S.gpg-agent" 2> /dev/null
+	echo "export PATH=$GNUPGHOME:$PATH \
+		  export GNUPGHOME=$GNUPGHOME; \
+		  export GPG_AGENT_INFO=$GNUPGHOME/S.gpg-agent"
+}
+
+gpg_cleanup(){
+	gpgconf --kill gpg-agent
+	rm -rf "$GNUPGHOME"
+}
+
+verify_file() {
+	filename="${1?}"
+	sig_count=0
+	seen_fingerprints=""
+	for sig_filename in "${filename%.*}".*.asc; do
+		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
+			echo "Invalid signature: ${sig_filename}";
+			exit 1;
+		}
+		fingerprint=$( \
+			gpg --list-packets "${sig_filename}" \
+			| grep keyid \
+			| sed 's/.*keyid //g'
+		)
+		signer=$( \
+			gpg \
+				--list-keys \
+				--with-colons "${fingerprint}" 2>&1 \
+			| awk -F: '$1 == "uid" {print $10}' \
+			| head -n1 \
+		)
+		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] && {
+			echo "Duplicate signature: ${sig_filename}";
+			exit 1;
+		}
+		echo "Verified signature by \"${signer}\""
+		seen_fingerprints="${seen_fingerprints} ${fingerprint}"
+		((sig_count=sig_count+1))
+	done
+	[[ "$sig_count" -ge "$threshold" ]] || {
+		echo "Minimum number of signatures not met: ${sig_count}/${threshold}";
+		exit 1;
+	}
+}
+
+cmd_manifest() {
+	mkdir -p .siglog
+	find . \
+	    -type f \
+		-not -path "./.git/*" \
+		-not -path "./.siglog/*" \
+	    -exec openssl sha256 -r {} \; \
+	| sed 's/ \*/ /g' \
+	| LC_ALL=C sort -k2 \
+	> .siglog/manifest.txt
+}
+
+cmd_detach-verify() {
+	[ $# -lt 3 ] || die \
+		"Usage: detach-verify <threshold> <pubkey_dir> <file> (, <file, ...)"
+
+	threshold="${1}"
+	pubkey_dir="${2}"
+	target_files="${*:3}"
+
+	eval "$(gpg_env)"
+	gpg --import "${pubkey_dir}"/*.asc 2>/dev/null
+	for target_file in ${target_files}; do
+		verify_file "${target_file}"
+	done
+
+	gpg_cleanup
+}
+
+cmd_verify() {
+	cmd_manifest
+	for file in .siglog/*.asc; do
+	  gpg --verify "$file" signatures/manifest.txt
+	done
+}
+
+cmd_version() {
+	cat <<-_EOF
+	============================================
+	=  siglog: simple multisig trust toolchain =
+	=                                          =
+	=                  v0.0.1                  =
+	=                                          =
+	=     https://gitlab.com/pchq/siglog       =
+	============================================
+	_EOF
+}
+
+cmd_usage() {
+	cmd_version
+	echo
+	cat <<-_EOF
+	Usage:
+	    $PROGRAM detach-verify [<threshold> <pubkey_dir> <file> (, <file, ...)
+	        Verify detached signatures of the provided file by m-of-n keys
+	    $PROGRAM verify
+	        Verify all signing policies for this directory are met
+	    $PROGRAM manifest
+	        Generate hash manifest for this directory
+	    $PROGRAM sign
+	        Add signature to manifest for this directory
+	    $PROGRAM help
+	        Show this text.
+	    $PROGRAM version
+	        Show version information.
+	_EOF
+}
+
+checktools(){
+	for cmd in "$@"; do
+		if ! command -v "$1" >/dev/null; then
+			printf "not found!\n";
+			return 1;
+		fi
+	done
+}
+
+PROGRAM="${0##*/}"
+COMMAND="$1"
+
+checktools gpg openssl
+
+case "$1" in
+	detach-verify) shift;		cmd_detach-verify "$@" ;;
+	verify) shift;				cmd_verify "$@" ;;
+	manifest) shift;			cmd_manifest "$@" ;;
+	sign) shift;			    cmd_sign "$@" ;;
+	version|--version) shift;	cmd_version "$@" ;;
+	help|--help) shift;			cmd_usage "$@" ;;
+	*)							cmd_usage "$@" ;;
+esac
+exit 0
