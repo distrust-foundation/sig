@@ -6,6 +6,15 @@ die() {
 	exit 1
 }
 
+checktools(){
+	for cmd in "$@"; do
+		if ! command -v "$1" >/dev/null; then
+			printf "not found!\n";
+			return 1;
+		fi
+	done
+}
+
 gpg_env(){
 	GNUPGHOME=$(mktemp -d -p /dev/shm/); export GNUPGHOME
 	killall gpg-agent 2> /dev/null
@@ -121,15 +130,6 @@ cmd_usage() {
 	    $PROGRAM version
 	        Show version information.
 	_EOF
-}
-
-checktools(){
-	for cmd in "$@"; do
-		if ! command -v "$1" >/dev/null; then
-			printf "not found!\n";
-			return 1;
-		fi
-	done
 }
 
 PROGRAM="${0##*/}"
