@@ -154,7 +154,7 @@ cmd_verify() {
 	done
 }
 
-cmd_sign(){
+cmd_add(){
 	cmd_manifest
 	gpg --armor --detach-sig .${PROGRAM}/manifest.txt
 	local fingerprint=$( \
@@ -168,11 +168,11 @@ cmd_sign(){
 cmd_version() {
 	cat <<-_EOF
 	============================================
-	=  siglog: simple multisig trust toolchain =
+	=  sig: simple multisig trust toolchain    =
 	=                                          =
 	=                  v0.0.1                  =
 	=                                          =
-	=     https://gitlab.com/pchq/siglog       =
+	=     https://gitlab.com/pchq/sig          =
 	============================================
 	_EOF
 }
@@ -183,7 +183,7 @@ cmd_usage() {
 	Usage:
 	    $PROGRAM verify
 	        Verify all signing policies for this directory are met
-	    $PROGRAM sign
+	    $PROGRAM add
 	        Add signature to manifest for this directory
 	    $PROGRAM manifest
 	        Generate hash manifest for this directory
@@ -194,14 +194,14 @@ cmd_usage() {
 	_EOF
 }
 
+check_tools head cut find sort sed gpg openssl
+
 PROGRAM="${0##*/}"
 COMMAND="$1"
 
-check_tools head cut find sort sed gpg openssl
-
 case "$1" in
 	verify) shift;              cmd_verify "$@" ;;
-	sign) shift;                cmd_sign "$@" ;;
+	add) shift;                 cmd_add "$@" ;;
 	manifest) shift;            cmd_manifest "$@" ;;
 	version|--version) shift;   cmd_version "$@" ;;
 	help|--help) shift;         cmd_usage "$@" ;;
