@@ -122,6 +122,8 @@ cmd_verify() {
 	local min=3
 	#TODO: support --group for a gpg-group
 	local group=""
+	#TODO: if git: show git signature status to aid in trust building
+	#TODO: if git and if invalid: show diff against last valid version
 	( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
 		|| die "Error: No signatures"
 	cmd_manifest
