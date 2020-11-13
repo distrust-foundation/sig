@@ -78,14 +78,22 @@ cmd_manifest() {
 }
 
 verify_file() {
-	[ $# -eq 2 ] || die \
-		"Usage: verify_file <threshold> <file>"
+	[ $# -eq 3 ] || die \
+		"Usage: verify_file <threshold> <group> <file>"
 	local threshold="${1}"
-	local filename="${2}"
+	local group="${2}"
+	local filename="${3}"
+	local group_config=""
 	local sig_count=0
 	local seen_fingerprints=""
 	local fingerprint
 	local signer
+
+	[ ! -z "$group" ] && group_config="$( \
+		gpg --with-colons --list-config group \
+		| grep -i "^cfg:group:${group}:" \
+	)" || die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
+
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
 			echo "Invalid signature: ${sig_filename}";
@@ -103,11 +111,16 @@ verify_file() {
 			| awk -F: '$1 == "uid" {print $10}' \
 			| head -n1 \
 		)
-		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] && {
-			echo "Duplicate signature: ${sig_filename}";
-			exit 1;
-		}
+
+		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] \
+			&& die "Duplicate signature: ${sig_filename}";
+
+		[ ! -z "$group_config" ] \
+			&& [[ "${group_config}" != *"${fingerprint}"* ]] \
+			&& die "Signature not in group \"${group}\": ${sig_filename}";
+
 		echo "Verified signature by \"${signer}\""
+
 		seen_fingerprints="${seen_fingerprints} ${fingerprint}"
 		((sig_count=sig_count+1))
 	done
@@ -118,16 +131,22 @@ verify_file() {
 }
 
 cmd_verify() {
-	#TODO: support --min to override the default minimum of 3
-	local min=3
-	#TODO: support --group for a gpg-group
-	local group=""
+	local opts selected_line min=1 group=""
+	opts="$(getopt -o m:g: -l min:,group: -n "$PROGRAM" -- "$@")"
+	local err=$?
+	eval set -- "$opts"
+	while true; do case $1 in
+		-m|--min) min="$2"; shift 2 ;;
+		-g|--group) group="$2"; shift 2 ;;
+		--) shift; break ;;
+	esac done
+
 	#TODO: if git: show git signature status to aid in trust building
 	#TODO: if git and if invalid: show diff against last valid version
 	( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
 		|| die "Error: No signatures"
 	cmd_manifest
-	verify_file "${min}" .${PROGRAM}/manifest.txt
+	verify_file "${min}" "${group}" .${PROGRAM}/manifest.txt
 }
 
 cmd_add(){
@@ -143,13 +162,13 @@ cmd_add(){
 
 cmd_version() {
 	cat <<-_EOF
-	============================================
-	=  sig: simple multisig trust toolchain    =
-	=                                          =
-	=                  v0.0.1                  =
-	=                                          =
-	=     https://gitlab.com/pchq/sig          =
-	============================================
+	==========================================
+	=  sig: simple multisig trust toolchain  =
+	=                                        =
+	=                  v0.0.1                =
+	=                                        =
+	=     https://gitlab.com/pchq/sig        =
+	==========================================
 	_EOF
 }
 
@@ -157,7 +176,7 @@ cmd_usage() {
 	cmd_version
 	cat <<-_EOF
 	Usage:
-	    $PROGRAM verify
+	    $PROGRAM verify [--group=<group>,-g <group>] [--min=<N>,-m <N>]
 	        Verify all signing policies for this directory are met
 	    $PROGRAM add
 	        Add signature to manifest for this directory
@@ -170,7 +189,7 @@ cmd_usage() {
 	_EOF
 }
 
-check_tools head cut find sort sed gpg openssl
+check_tools head cut find sort sed gpg openssl getopt
 
 PROGRAM="${0##*/}"
 COMMAND="$1"
