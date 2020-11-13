@@ -58,22 +58,30 @@ get_temp(){
 	)"
 }
 
-gpg_env(){
-	GNUPGHOME=$(get_temp); export GNUPGPHOME
-	killall gpg-agent 2> /dev/null
-	gpg-agent --daemon --extra-socket "$GNUPGHOME/S.gpg-agent" 2> /dev/null
-	echo "export PATH=$GNUPGHOME:$PATH \
-		  export GNUPGHOME=$GNUPGHOME; \
-		  export GPG_AGENT_INFO=$GNUPGHOME/S.gpg-agent"
+get_files(){
+	if command -v git >/dev/null; then
+		git ls-files | grep -v ".${PROGRAM}"
+	else
+		find . \
+			-type f \
+			-not -path "./.git/*" \
+			-not -path "./.${PROGRAM}/*"
+	fi
 }
 
-gpg_cleanup(){
-	gpgconf --kill gpg-agent
-	rm -rf "$GNUPGHOME"
+cmd_manifest() {
+	mkdir -p ".${PROGRAM}"
+	printf "$(get_files | xargs openssl sha256 -r)" \
+	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
+	| LC_ALL=C sort -k2 \
+	> ".${PROGRAM}/manifest.txt"
 }
 
 verify_file() {
-	local filename="${1?}"
+	[ $# -eq 2 ] || die \
+		"Usage: verify_file <threshold> <file>"
+	local threshold="${1}"
+	local filename="${2}"
 	local sig_count=0
 	local seen_fingerprints=""
 	local fingerprint
@@ -109,49 +117,15 @@ verify_file() {
 	}
 }
 
-verify_files() {
-	[ $# -lt 3 ] || die \
-		"Usage: verify-files <threshold> <pubkey_dir> <file> (, <file, ...)"
-
-	local threshold="${1}"
-	local pubkey_dir="${2}"
-	local target_files="${*:3}"
-
-	eval "$(gpg_env)"
-	gpg --import "${pubkey_dir}"/*.asc 2>/dev/null
-	for target_file in ${target_files}; do
-		verify_file "${target_file}"
-	done
-
-	gpg_cleanup
-}
-
-get_files(){
-	if command -v git >/dev/null; then
-		git ls-files | grep -v ".${PROGRAM}"
-	else
-		find . \
-			-type f \
-			-not -path "./.git/*" \
-			-not -path "./.${PROGRAM}/*"
-	fi
-}
-
-cmd_manifest() {
-	mkdir -p ".${PROGRAM}"
-	printf "$(get_files | xargs openssl sha256 -r)" \
-	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
-	| LC_ALL=C sort -k2 \
-	> ".${PROGRAM}/manifest.txt"
-}
-
 cmd_verify() {
+	#TODO: support --min to override the default minimum of 3
+	local min=3
+	#TODO: support --group for a gpg-group
+	local group=""
 	( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
 		|| die "Error: No signatures"
 	cmd_manifest
-	for file in .${PROGRAM}/*.asc; do
-	  gpg --verify "$file" .${PROGRAM}/manifest.txt
-	done
+	verify_file "${min}" .${PROGRAM}/manifest.txt
 }
 
 cmd_add(){
