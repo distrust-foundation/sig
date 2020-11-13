@@ -128,21 +128,21 @@ verify_files() {
 
 get_files(){
 	if command -v git >/dev/null; then
-		git ls-files | grep -v .siglog
+		git ls-files | grep -v ".${PROGRAM}"
 	else
 		find . \
 			-type f \
 			-not -path "./.git/*" \
-			-not -path "./.siglog/*"
+			-not -path "./.${PROGRAM}/*"
 	fi
 }
 
 cmd_manifest() {
-	mkdir -p .${PROGRAM}
+	mkdir -p ".${PROGRAM}"
 	printf "$(get_files | xargs openssl sha256 -r)" \
 	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
 	| LC_ALL=C sort -k2 \
-	> .${PROGRAM}/manifest.txt
+	> ".${PROGRAM}/manifest.txt"
 }
 
 cmd_verify() {
