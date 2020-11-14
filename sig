@@ -4,24 +4,52 @@ set -e
 MIN_BASH_VERSION=4
 MIN_GPG_VERSION=2.2
 MIN_OPENSSL_VERSION=1.1
+MIN_GETOPT_VERSION=2.33
 
 die() {
 	echo "$@" >&2
 	exit 1
 }
 
+die_pkg() {
+	local package=${1?}
+	local version=${2?}
+	local install_cmd
+	case "$OSTYPE" in
+		linux*)
+			if command -v "apt" >/dev/null; then
+				install_cmd="apt install ${package}"
+			elif command -v "yum" >/dev/null; then
+				install_cmd="yum install ${package}"
+			elif command -v "pacman" >/dev/null; then
+				install_cmd="pacman -Ss ${package}"
+			elif command -v "nix-env" >/dev/null; then
+				install_cmd="nix-env -i ${package}"
+			fi
+		;;
+		bsd*)     install_cmd="pkg install ${package}" ;;
+		darwin*)  install_cmd="port install ${package}" ;;
+		*) die "Error: Your operating system is not supported" ;;
+	esac
+	echo "Error: ${package} ${version}+ does not appear to be installed." >&2
+	[ ! -z "$install_cmd" ] && printf "Try: \`${install_cmd}\`" >&2
+	exit 1
+}
+
 check_version(){
-    [[ $2 == $3 ]] && return 0
+	local pkg="${1?}"
+	local have="${2?}"
+	local need="${3?}"
+    [[ "$have" == "$need" ]] && return 0
     local IFS=.
-    local i ver1=($2) ver2=($3)
+    local i ver1=($have) ver2=($need)
     for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));
     	do ver1[i]=0;
     done
     for ((i=0; i<${#ver1[@]}; i++)); do
         [[ -z ${ver2[i]} ]] && ver2[i]=0
         ((10#${ver1[i]} > 10#${ver2[i]})) && return 0
-        ((10#${ver1[i]} < 10#${ver2[i]})) && die \
-			"Error: ${1} ${3}+ not found"
+        ((10#${ver1[i]} < 10#${ver2[i]})) && die_pkg "${pkg}" "${need}"
     done
 }
 
@@ -29,18 +57,22 @@ check_tools(){
 	if [ -z "${BASH_VERSINFO}" ] \
 	|| [ -z "${BASH_VERSINFO[0]}" ] \
 	|| [ ${BASH_VERSINFO[0]} -lt ${MIN_BASH_VERSION} ]; then
-		die "Error: bash ${MIN_BASH_VERSION}+ not found";
+		die_pkg "bash" "${MIN_BASH_VERSION}"
 	fi
 	for cmd in "$@"; do
 		command -v "$1" >/dev/null || die "Error: $cmd not found"
 		case $cmd in
 			gpg)
 				version=$(gpg --version | head -n1 | cut -d" " -f3)
-				check_version "gpg" "${version}" "${MIN_GPG_VERSION}"
+				check_version "gnupg" "${version}" "${MIN_GPG_VERSION}"
 			;;
 			openssl)
 				version=$(openssl version | cut -d" " -f2 | sed 's/[a-z]//g')
 				check_version "openssl" "${version}" "${MIN_OPENSSL_VERSION}"
+			;;
+			getopt)
+				version=$(getopt --version | cut -d" " -f4 | sed 's/[a-z]//g')
+				check_version "getopt" "${version}" "${MIN_GETOPT_VERSION}"
 			;;
 		esac
 	done
@@ -69,17 +101,8 @@ get_files(){
 	fi
 }
 
-cmd_manifest() {
-	mkdir -p ".${PROGRAM}"
-	printf "$(get_files | xargs openssl sha256 -r)" \
-	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
-	| LC_ALL=C sort -k2 \
-	> ".${PROGRAM}/manifest.txt"
-}
-
 verify_file() {
-	[ $# -eq 3 ] || die \
-		"Usage: verify_file <threshold> <group> <file>"
+	[ $# -eq 3 ] || die "Usage: verify_file <threshold> <group> <file>"
 	local threshold="${1}"
 	local group="${2}"
 	local filename="${3}"
@@ -128,6 +151,14 @@ verify_file() {
 		echo "Minimum number of signatures not met: ${sig_count}/${threshold}";
 		exit 1;
 	}
+}
+
+cmd_manifest() {
+	mkdir -p ".${PROGRAM}"
+	printf "$(get_files | xargs openssl sha256 -r)" \
+	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
+	| LC_ALL=C sort -k2 \
+	> ".${PROGRAM}/manifest.txt"
 }
 
 cmd_verify() {
@@ -189,17 +220,14 @@ cmd_usage() {
 	_EOF
 }
 
-check_tools head cut find sort sed gpg openssl getopt
+check_tools head cut find sort sed getopt gpg openssl
 
 PROGRAM="${0##*/}"
-COMMAND="$1"
-
 case "$1" in
-	verify) shift;              cmd_verify "$@" ;;
-	add) shift;                 cmd_add "$@" ;;
-	manifest) shift;            cmd_manifest "$@" ;;
-	version|--version) shift;   cmd_version "$@" ;;
-	help|--help) shift;         cmd_usage "$@" ;;
-	*)                          cmd_usage "$@" ;;
+	verify)            shift; cmd_verify   "$@" ;;
+	add)               shift; cmd_add      "$@" ;;
+	manifest)          shift; cmd_manifest "$@" ;;
+	version|--version) shift; cmd_version  "$@" ;;
+	help|--help)       shift; cmd_usage    "$@" ;;
+	*)                        cmd_usage    "$@" ;;
 esac
-exit 0
