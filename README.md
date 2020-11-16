@@ -14,26 +14,30 @@ The simple GPG signature toolchain for directories or git repos.
 ## Install
 
   1. Clone
-    ```
-    git clone git@gitlab.com/pchq/sig.git sig
-    ```
+
+      ```
+      git clone git@gitlab.com/pchq/sig.git sig
+      ```
 
   2. Manually verify
-    ```
-    for file in .sig/*.asc; do gpg --verify $file .sig/manifest.txt; done
-    gpg log --show-signature
-    less sig
-    ```
+
+      ```
+      for file in .sig/*.asc; do gpg --verify $file .sig/manifest.txt; done
+      gpg log --show-signature
+      less sig
+      ```
 
   3. Self verify
-    ```
-    ./sig verify --threshold 3
-    ```
+
+      ```
+      ./sig verify --threshold 3
+      ```
 
   4. Copy to $PATH
-    ```
-    cp sig ~/.local/bin/
-    ```
+
+      ```
+      cp sig ~/.local/bin/
+      ```
 
 ## Methods
 
