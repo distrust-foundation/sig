@@ -110,6 +110,7 @@ get_files(){
 	fi
 }
 
+### Get signer name/email from key fingerprint
 get_signer(){
 	local fingerprint="${1?}"
 	gpg \
@@ -177,6 +178,7 @@ verify_git(){
 	local sig_count=0
 	local seen_fingerprints=""
 	local depth=0
+	#TODO: implement group validation
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
