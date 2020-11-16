@@ -87,20 +87,16 @@ defined gpg alias group.
 
 ## Usage
 
-#### sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
-  Verify m-of-n signatures by given group are present for directory
-
-#### sig add
-  Add signature to manifest for this directory
-
-#### sig manifest
-  Generate hash manifest for this directory
-
-#### sig help
-  Show help text.
-
-#### sig version
-  Show version information.
+* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
+  * Verify m-of-n signatures by given group are present for directory
+* sig add
+  * Add signature to manifest for this directory
+* sig manifest
+  * Generate hash manifest for this directory
+* sig help
+  * Show help text.
+* sig version
+  * Show version information.
 
 
 ## Examples
