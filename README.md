@@ -19,7 +19,16 @@ The simple GPG signature toolchain for directories or git repos.
       git clone git@gitlab.com/pchq/sig.git sig
       ```
 
-  2. Manually verify
+  2. Manually generate manifest
+
+      ```
+      git ls-files \
+      | grep -v .sig \
+      | xargs openssl sha256 -r \
+      | sed -e 's/ \*/ /g' -e 's/ \.\// /g'
+      ```
+
+  3. Manually verify manifest
 
       ```
       for file in .sig/*.asc; do gpg --verify $file .sig/manifest.txt; done
@@ -27,13 +36,13 @@ The simple GPG signature toolchain for directories or git repos.
       less sig
       ```
 
-  3. Self verify
+  4. Self verify
 
       ```
       ./sig verify --threshold 3
       ```
 
-  4. Copy to $PATH
+  5. Copy to $PATH
 
       ```
       cp sig ~/.local/bin/
