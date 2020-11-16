@@ -87,25 +87,43 @@ defined gpg alias group.
 
 ## Usage
 
-### Verify 1 signature via Detached and Git methods
+#### sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
+  Verify m-of-n signatures by given group are present for directory
+
+#### sig add
+  Add signature to manifest for this directory
+
+#### sig manifest
+  Generate hash manifest for this directory
+
+#### sig help
+  Show help text.
+
+#### sig version
+  Show version information.
+
+
+## Examples
+
+#### Verify 1 signature via Detached and Git methods
 
 ```
 sig verify
 ```
 
-### Verify 2 unique signatures via Detached and Git methods
+#### Verify 2 unique signatures via Detached and Git methods
 
 ```
 sig verify --threshold 2
 ```
 
-### Verify 3 unique signatures from specified signing group via Git method
+#### Verify 3 unique signatures from specified signing group via Git method
 
 ```
 sig verify --threshold 2 --group myteam --method git
 ```
 
-### Add Detached Signature
+#### Add Detached Signature
 
 ```
 sig add
