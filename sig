@@ -110,6 +110,15 @@ get_files(){
 	fi
 }
 
+get_signer(){
+	local fingerprint="${1?}"
+	gpg \
+		--list-keys \
+		--with-colons "${fingerprint}" 2>&1 \
+	| awk -F: '$1 == "uid" {print $10}' \
+	| head -n1
+}
+
 ### Verify a file has 0-N unique valid detached signatures
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_file() {
@@ -140,13 +149,7 @@ verify_file() {
 			| grep keyid \
 			| sed 's/.*keyid //g'
 		)
-		signer=$( \
-			gpg \
-				--list-keys \
-				--with-colons "${fingerprint}" 2>&1 \
-			| awk -F: '$1 == "uid" {print $10}' \
-			| head -n1 \
-		)
+		signer=$( get_signer "${fingerprint}" )
 
 		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] \
 			&& die "Duplicate signature: ${sig_filename}";
@@ -155,15 +158,13 @@ verify_file() {
 			&& [[ "${group_config}" != *"${fingerprint}"* ]] \
 			&& die "Signature not in group \"${group}\": ${sig_filename}";
 
-		echo "Verified signature by \"${signer}\""
+		echo "Verified detached signature by \"${signer}\""
 
 		seen_fingerprints="${seen_fingerprints} ${fingerprint}"
 		((sig_count=sig_count+1))
 	done
-	[[ "$sig_count" -ge "$threshold" ]] || {
-		echo "Minimum number of signatures not met: ${sig_count}/${threshold}";
-		exit 1;
-	}
+	[[ "$sig_count" -ge "$threshold" ]] || \
+		die "Minimum detached signatures not found: ${sig_count}/${threshold}";
 }
 
 ### Verify all commits in git repo have valid signatures
@@ -173,9 +174,31 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local threshold="${1}"
 	local group="${2}"
-	#for commit in $(git log --format='%H%GP'); do
-	#	echo "$commit"
-  	#done
+	local sig_count=0
+	local seen_fingerprints=""
+	local depth=0
+
+	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
+		ref=HEAD~${depth}
+		commit=$(git log --format="%H" "$ref")
+		fingerprint=$(git log --format="%GP" "$ref" -n1 )
+		signer=$( get_signer "${fingerprint}" )
+
+		git verify-commit HEAD~${depth} >/dev/null 2>&1\
+			|| die "Unsigned commit: ${commit}"
+
+		[[ "${seen_fingerprints}" != *"${fingerprint}"* ]] \
+			&& seen_fingerprints="${seen_fingerprints} ${fingerprint}" \
+			&& ((sig_count=sig_count+1)) \
+			&& echo "Verified git signature at depth ${depth} by \"${signer}\""
+
+		[[ "${sig_count}" -ge "${threshold}" ]] && break;
+
+		((depth=depth+1))
+	done
+
+	[[ "${sig_count}" -ge "${threshold}" ]] \
+		|| die "Minimum git signatures not found: ${sig_count}/${threshold}";
 }
 
 
