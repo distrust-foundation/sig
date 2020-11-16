@@ -121,8 +121,8 @@ get_signer(){
 
 ### Verify a file has 0-N unique valid detached signatures
 ### Optionally verify all signatures belong to keys in gpg alias group
-verify_file() {
-	[ $# -eq 3 ] || die "Usage: verify_file <threshold> <group> <file>"
+verify_detached() {
+	[ $# -eq 3 ] || die "Usage: verify_detached <threshold> <group> <file>"
 	local threshold="${1}"
 	local group="${2}"
 	local filename="${3}"
@@ -213,24 +213,32 @@ cmd_manifest() {
 }
 
 cmd_verify() {
-	local opts min=1 group=""
-	opts="$(getopt -o m:g: -l min:,group: -n "$PROGRAM" -- "$@")"
+	local opts threshold=1 group="" method=""
+	opts="$(getopt -o t:g:m: -l threshold:,group:,method: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
-		-m|--min) min="$2"; shift 2 ;;
+		-t|--threshold) threshold="$2"; shift 2 ;;
 		-g|--group) group="$2"; shift 2 ;;
+		-m|--method) method="$2"; shift 2 ;;
 		--) shift; break ;;
 	esac done
 
-	command -v git >/dev/null 2>&1 \
-		&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 ) \
-		&& verify_git "${min}" "${group}"
+	if ( [ -z "$method" ] || [ "$method" == "git" ] ); then
+		if [ "$method" == "git" ]; then
+			command -v git >/dev/null 2>&1 \
+			|| die "Error: method 'git' specified and git is not installed"
+		fi
+		command -v git >/dev/null 2>&1 \
+			&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 ) \
+			&& verify_git "${threshold}" "${group}"
+	fi
 
-	#TODO: if git and if invalid: show diff against last valid version
-	( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
-		|| die "Error: No signatures"
-	cmd_manifest
-	verify_file "${min}" "${group}" .${PROGRAM}/manifest.txt
+	if ( [ -z "$method" ] || [ "$method" == "detached" ] ); then
+		( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
+			|| die "Error: No signatures"
+		cmd_manifest
+		verify_detached "${threshold}" "${group}" .${PROGRAM}/manifest.txt
+	fi
 }
 
 cmd_add(){
@@ -260,7 +268,7 @@ cmd_usage() {
 	cmd_version
 	cat <<-_EOF
 	Usage:
-	    $PROGRAM verify [--group=<group>,-g <group>] [--min=<N>,-m <N>]
+	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
 	        Verify m-of-n signatures by given group are present for directory
 	    $PROGRAM add
 	        Add signature to manifest for this directory
