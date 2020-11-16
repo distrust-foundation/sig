@@ -6,11 +6,15 @@ MIN_GPG_VERSION=2.2
 MIN_OPENSSL_VERSION=1.1
 MIN_GETOPT_VERSION=2.33
 
+## Private Functions
+
+### Bail with error message
 die() {
 	echo "$@" >&2
 	exit 1
 }
 
+### Bail and instruct user on missing package to install for their platform
 die_pkg() {
 	local package=${1?}
 	local version=${2?}
@@ -36,6 +40,7 @@ die_pkg() {
 	exit 1
 }
 
+### Check if actual binary version is >= minimum version
 check_version(){
 	local pkg="${1?}"
 	local have="${2?}"
@@ -53,6 +58,7 @@ check_version(){
     done
 }
 
+### Check if required binaries are installed at appropriate versions
 check_tools(){
 	if [ -z "${BASH_VERSINFO}" ] \
 	|| [ -z "${BASH_VERSINFO[0]}" ] \
@@ -78,6 +84,7 @@ check_tools(){
 	done
 }
 
+### Handle different implementations of mktemp across platforms
 get_temp(){
 	echo "$(
 		mktemp \
@@ -90,6 +97,8 @@ get_temp(){
 	)"
 }
 
+### Get files that will be added to the manifest for signing
+### Use git if available, else fall back to find
 get_files(){
 	if command -v git >/dev/null; then
 		git ls-files | grep -v ".${PROGRAM}"
@@ -101,6 +110,8 @@ get_files(){
 	fi
 }
 
+### Verify a file has 0-N unique valid detached signatures
+### Optionally verify all signatures belong to keys in gpg alias group
 verify_file() {
 	[ $# -eq 3 ] || die "Usage: verify_file <threshold> <group> <file>"
 	local threshold="${1}"
@@ -112,10 +123,12 @@ verify_file() {
 	local fingerprint
 	local signer
 
-	[ ! -z "$group" ] && group_config="$( \
-		gpg --with-colons --list-config group \
-		| grep -i "^cfg:group:${group}:" \
-	)" || die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
+	if [ ! -z "$group" ]; then
+		group_config="$( \
+			gpg --with-colons --list-config group \
+				| grep -i "^cfg:group:${group}:" \
+		)" || die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
+	fi
 
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
@@ -153,18 +166,32 @@ verify_file() {
 	}
 }
 
+### Verify all commits in git repo have valid signatures
+### Optionally verify a minimum number of valid unique signatures
+### Optionally verify all signatures belong to keys in gpg alias group
+verify_git(){
+	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
+	local threshold="${1}"
+	local group="${2}"
+	#for commit in $(git log --format='%H%GP'); do
+	#	echo "$commit"
+  	#done
+}
+
+
+## Public Commands
+
 cmd_manifest() {
 	mkdir -p ".${PROGRAM}"
 	printf "$(get_files | xargs openssl sha256 -r)" \
-	| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
-	| LC_ALL=C sort -k2 \
-	> ".${PROGRAM}/manifest.txt"
+		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
+		| LC_ALL=C sort -k2 \
+		> ".${PROGRAM}/manifest.txt"
 }
 
 cmd_verify() {
-	local opts selected_line min=1 group=""
+	local opts min=1 group=""
 	opts="$(getopt -o m:g: -l min:,group: -n "$PROGRAM" -- "$@")"
-	local err=$?
 	eval set -- "$opts"
 	while true; do case $1 in
 		-m|--min) min="$2"; shift 2 ;;
@@ -172,7 +199,10 @@ cmd_verify() {
 		--) shift; break ;;
 	esac done
 
-	#TODO: if git: show git signature status to aid in trust building
+	command -v git >/dev/null 2>&1 \
+		&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 ) \
+		&& verify_git "${min}" "${group}"
+
 	#TODO: if git and if invalid: show diff against last valid version
 	( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
 		|| die "Error: No signatures"
@@ -208,7 +238,7 @@ cmd_usage() {
 	cat <<-_EOF
 	Usage:
 	    $PROGRAM verify [--group=<group>,-g <group>] [--min=<N>,-m <N>]
-	        Verify all signing policies for this directory are met
+	        Verify m-of-n signatures by given group are present for directory
 	    $PROGRAM add
 	        Add signature to manifest for this directory
 	    $PROGRAM manifest
@@ -220,9 +250,13 @@ cmd_usage() {
 	_EOF
 }
 
+# Verify all tools in this list are installed at needed versions
 check_tools head cut find sort sed getopt gpg openssl
 
+# Allow entire script to be namespaced based on filename
 PROGRAM="${0##*/}"
+
+# Export public sub-commands
 case "$1" in
 	verify)            shift; cmd_verify   "$@" ;;
 	add)               shift; cmd_add      "$@" ;;
