@@ -70,7 +70,7 @@ This method verifies a git repo contains signed commits by one or more authors.
 If 'threshold' is specified, it searches history until enough unique signatures
 are found to satisify the threshold, ensuring all commits between are signed.
 
-If 'group' is specified, all signatures must be by keys that belong to a
+If 'group' is specified, all signatures must be from keys that belong to a
 defined gpg alias group.
 
 Note: this only proves the history had multiple participants, but not that
@@ -128,8 +128,9 @@ sig add
 
 ### Why Bash?
 
-Because it is easy to quickly verify at any time, has wide OS compatibility andthe majority of the needed operations are calling other programs already on
-your system like gpg and openssl.
+Because it is easy to quickly verify at any time, has wide OS compatibility and
+the majority of the needed operations are calling other programs already on
+most systems like gpg and openssl.
 
 If this were in another language it would be harder to audit on the fly, would
 require the user to have a specific language toolchain installed, and it would
@@ -155,5 +156,5 @@ stable future.
 See: https://sequoia-pgp.org/
 
 The only promising alternative to GnuPG for software signing that has hsm
-support and the very attractive feature of expiring signatures is [The Update Framework](https://theupdateframework.io) which may be supported as an alternate
-method in the future if m-of-n multisig is ever implemented.
+support and the very attractive feature of expiring signatures is [The Update Framework](https://theupdateframework.io) which may be supported as an alternate method in the future
+if m-of-n multisig is ever implemented.

@@ -159,8 +159,8 @@ group_add_fp(){
 	local group_names=()
 	local member_lists=()
     local name member_list config i data
+    local -r config=$(group_get_config)
 
-    config=$(group_get_config)
     while IFS=' =' read -rd, name member_list; do
         group_names+=("${name:1}")
         member_lists+=("$member_list")
@@ -194,8 +194,8 @@ group_get_fps(){
 group_check_fp(){
 	local fp=${1?}
 	local group_name=${2?}
-	local group_fps; group_fps=$( group_get_fps "${group_name}" )
-	local uid; uid=$(get_uid "${fp}")
+	local -r group_fps=$( group_get_fps "${group_name}" )
+	local -r uid=$(get_uid "${fp}")
 
 	if [ -z "$group_fps" ] \
 		|| [[ "${group_fps}" != *"${fp}"* ]]; then
@@ -337,7 +337,7 @@ cmd_verify() {
 cmd_add(){
 	cmd_manifest
 	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
-	local fp; fp=$( \
+	local -r fp=$( \
 		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
 			| grep "issuer key ID" \
 			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
