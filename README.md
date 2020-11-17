@@ -48,6 +48,19 @@ The simple GPG signature toolchain for directories or git repos.
       cp sig ~/.local/bin/
       ```
 
+## Usage
+
+* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
+  * Verify m-of-n signatures by given group are present for directory
+* sig add
+  * Add signature to manifest for this directory
+* sig manifest
+  * Generate hash manifest for this directory
+* sig help
+  * Show help text.
+* sig version
+  * Show version information.
+
 ## Methods
 
 ### Git
@@ -84,20 +97,6 @@ defined gpg alias group.
   - Multi-sig mode: Folder contents verified by multiple signers
   - Multi-sig group mode: Folder contents approved by specified individuals
   - Sha256 is not broken
-
-## Usage
-
-* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
-  * Verify m-of-n signatures by given group are present for directory
-* sig add
-  * Add signature to manifest for this directory
-* sig manifest
-  * Generate hash manifest for this directory
-* sig help
-  * Show help text.
-* sig version
-  * Show version information.
-
 
 ## Examples
 
