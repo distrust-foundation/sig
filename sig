@@ -40,6 +40,32 @@ die_pkg() {
 	exit 1
 }
 
+### Ask user to make a binary decision
+ask() {
+	local prompt default
+	while true; do
+		prompt=""
+		default=""
+		if [ "${2}" = "Y" ]; then
+			prompt="Y/n"
+			default=Y
+		elif [ "${2}" = "N" ]; then
+			prompt="y/N"
+			default=N
+		else
+			prompt="y/n"
+			default=
+		fi
+		printf "\\n%s [%s] " "$1" "$prompt"
+		read -r reply
+		[ -z "$reply" ] && reply=$default
+		case "$reply" in
+			Y*|y*) return 0 ;;
+			N*|n*) return 1 ;;
+		esac
+	done
+}
+
 ### Check if actual binary version is >= minimum version
 check_version(){
 	local pkg="${1?}"
@@ -96,22 +122,99 @@ get_files(){
 	fi
 }
 
-### Get signer name/email from key fingerprint
-get_signer(){
-	local fingerprint="${1?}"
-	gpg \
-		--list-keys \
-		--with-colons "${fingerprint}" 2>&1 \
-	| awk -F: '$1 == "uid" {print $10}' \
-	| head -n1
+### Get primary UID for a given fingerprint
+get_uid(){
+	local fp="${1?}"
+	gpg --list-keys --with-colons "${fp}" 2>&1 \
+		| awk -F: '$1 == "uid" {print $10}' \
+		| head -n1
 }
 
-get_group_config(){
-	local group=${1?}
-	gpg --with-colons --list-config group \
-		| grep -i "^cfg:group:${group}:" \
-		|| die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
+### Get primary fingerprint for given search
+get_primary_fp(){
+	local search="${1?}"
+	gpg --list-keys --with-colons "${search}" 2>&1 \
+		| awk -F: '$1 == "fpr" {print $10}' \
+		| head -n1
 }
+
+### Get fingerprint for a given pgp file
+get_file_fp(){
+	local filename="${1?}"
+	gpg --list-packets "${filename}" \
+		| grep keyid \
+		| sed 's/.*keyid //g'
+}
+
+### Get raw gpgconf group config
+group_get_config(){
+    local -r config=$(gpgconf --list-options gpg | grep ^group)
+    printf '%s' "${config##*:}"
+}
+
+### Add fingerprint to a given group
+group_add_fp(){
+	local fp=${1?}
+	local group_name=${2?}
+	local group_names=()
+	local member_lists=()
+    local name member_list config i data
+
+    config=$(group_get_config)
+    while IFS=' =' read -rd, name member_list; do
+        group_names+=("${name:1}")
+        member_lists+=("$member_list")
+    done <<< "$config,"
+
+	printf '%s\n' "${group_names[@]}" \
+		| grep -w "${group_name}" \
+		|| group_names+=("${group_name}")
+
+    for i in "${!group_names[@]}"; do
+    	[ "${group_names[$i]}" == "${group_name}" ] \
+    		&& member_lists[$i]="${member_lists[$i]} ${fp}"
+        data+=$(printf '"%s = %s,' "${group_names[$i]}" "${member_lists[$i]}")
+    done
+
+    echo "Adding key \"${fp}\" to group \"${group_name}\""
+    printf 'group:0:%s' "${data%?}" \
+    	| gpgconf --change-options gpg >/dev/null 2>&1
+}
+
+### Get fingerprints for a given group
+group_get_fps(){
+	local group_name=${1?}
+	gpg --with-colons --list-config group \
+		| grep -i "^cfg:group:${group_name}:" \
+		| cut -d ':' -f4
+}
+
+### Check if fingerprint belongs to a given group
+### Give user option to add it if they wish
+group_check_fp(){
+	local fp=${1?}
+	local group_name=${2?}
+	local group_fps; group_fps=$( group_get_fps "${group_name}" )
+	local uid; uid=$(get_uid "${fp}")
+
+	if [ -z "$group_fps" ] \
+		|| [[ "${group_fps}" != *"${fp}"* ]]; then
+
+		cat <<-_EOF
+
+			The following key is not a member of group "${group_name}":
+
+			Fingerprint: ${fp}
+			Primary UID: ${uid}
+		_EOF
+		if ask "Add key to group \"${group_name}\" ?" "N"; then
+			group_add_fp "${fp}" "${group_name}"
+		else
+			return 1
+		fi
+	fi
+}
+
 
 ### Verify a file has 0-N unique valid detached signatures
 ### Optionally verify all signatures belong to keys in gpg alias group
@@ -120,39 +223,34 @@ verify_detached() {
 	local threshold="${1}"
 	local group="${2}"
 	local filename="${3}"
-	local group_config=""
 	local sig_count=0
-	local seen_fingerprints=""
-	local fingerprint
-	local signer
+	local seen_fps=""
+	local fp
+	local uid
 
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
 			echo "Invalid signature: ${sig_filename}";
 			exit 1;
 		}
-		fingerprint=$( \
-			gpg --list-packets "${sig_filename}" \
-			| grep keyid \
-			| sed 's/.*keyid //g'
-		)
-		signer=$( get_signer "${fingerprint}" )
+		file_fp=$( get_file_fp "${sig_filename}" )
+		fp=$( get_primary_fp "${file_fp}" )
+		uid=$( get_uid "${fp}" )
 
-		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] \
+		[[ "${seen_fps}" == *"${fp}"* ]] \
 			&& die "Duplicate signature: ${sig_filename}";
 
-		if [ ! -z "$group" ]; then
-			group_config=$(get_group_config "${group}")
-			[[ "${group_config}" != *"${fingerprint}"* ]] \
-			&& die "Signature not in group \"${group}\": ${sig_filename}";
+		echo "Verified detached signature by \"${uid}\""
+
+		if [ ! -z "${group}" ]; then
+			group_check_fp "${fp}" "${group}" \
+				|| die "Detached signing key not in group \"${group}\": ${fp}";
 		fi
 
-		echo "Verified detached signature by \"${signer}\""
-
-		seen_fingerprints="${seen_fingerprints} ${fingerprint}"
+		seen_fps="${seen_fps} ${fp}"
 		((sig_count=sig_count+1))
 	done
-	[[ "$sig_count" -ge "$threshold" ]] || \
+	[[ "${sig_count}" -ge "${threshold}" ]] || \
 		die "Minimum detached signatures not found: ${sig_count}/${threshold}";
 }
 
@@ -163,30 +261,29 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local threshold="${1}"
 	local group="${2}"
-	local group_config=""
-	local seen_fingerprints=""
+	local seen_fps=""
 	local sig_count=0
 	local depth=0
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
 		commit=$(git log --format="%H" "$ref")
-		fingerprint=$(git log --format="%GP" "$ref" -n1 )
-		signer=$( get_signer "${fingerprint}" )
+		fp=$(git log --format="%GP" "$ref" -n1 )
+		uid=$( get_uid "${fp}" )
 
 		git verify-commit HEAD~${depth} >/dev/null 2>&1\
 			|| die "Unsigned commit: ${commit}"
 
-		if [ ! -z "$group" ]; then
-			group_config=$(get_group_config "${group}")
-			[[ "${group_config}" != *"${fingerprint}"* ]] \
-			&& die "Git signing key not in group \"${group}\": ${fingerprint}";
+		if [[ "${seen_fps}" != *"${fp}"* ]]; then
+			seen_fps="${seen_fps} ${fp}"
+			((sig_count=sig_count+1))
+			echo "Verified git signature at depth ${depth} by \"${uid}\""
 		fi
 
-		[[ "${seen_fingerprints}" != *"${fingerprint}"* ]] \
-			&& seen_fingerprints="${seen_fingerprints} ${fingerprint}" \
-			&& ((sig_count=sig_count+1)) \
-			&& echo "Verified git signature at depth ${depth} by \"${signer}\""
+		if [ ! -z "$group" ]; then
+			group_check_fp "${fp}" "${group}" \
+				|| die "Git signing key not in group \"${group}\": ${fp}"
+		fi
 
 		[[ "${sig_count}" -ge "${threshold}" ]] && break;
 
@@ -238,15 +335,14 @@ cmd_verify() {
 }
 
 cmd_add(){
-	local fingerprint
 	cmd_manifest
 	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
-	fingerprint=$( \
+	local fp; fp=$( \
 		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
 			| grep "issuer key ID" \
 			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
 	)
-	mv ."${PROGRAM}"/manifest.{"txt.asc","${fingerprint}.asc"}
+	mv ."${PROGRAM}"/manifest.{"txt.asc","${fp}.asc"}
 }
 
 cmd_version() {
