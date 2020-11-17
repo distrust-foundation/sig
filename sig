@@ -36,7 +36,7 @@ die_pkg() {
 		*) die "Error: Your operating system is not supported" ;;
 	esac
 	echo "Error: ${package} ${version}+ does not appear to be installed." >&2
-	[ ! -z "$install_cmd" ] && printf "Try: \`${install_cmd}\`" >&2
+	[ ! -z "$install_cmd" ] && echo "Try: \`${install_cmd}\`"  >&2
 	exit 1
 }
 
@@ -60,9 +60,8 @@ check_version(){
 
 ### Check if required binaries are installed at appropriate versions
 check_tools(){
-	if [ -z "${BASH_VERSINFO}" ] \
-	|| [ -z "${BASH_VERSINFO[0]}" ] \
-	|| [ ${BASH_VERSINFO[0]} -lt ${MIN_BASH_VERSION} ]; then
+	if [ -z "${BASH_VERSINFO[0]}" ] \
+	|| [ "${BASH_VERSINFO[0]}" -lt "${MIN_BASH_VERSION}" ]; then
 		die_pkg "bash" "${MIN_BASH_VERSION}"
 	fi
 	for cmd in "$@"; do
@@ -82,19 +81,6 @@ check_tools(){
 			;;
 		esac
 	done
-}
-
-### Handle different implementations of mktemp across platforms
-get_temp(){
-	echo "$(
-		mktemp \
-			--quiet \
-			--directory \
-			-t "$(basename "$0").XXXXXX" 2>/dev/null
-		|| mktemp \
-			--quiet \
-			--directory
-	)"
 }
 
 ### Get files that will be added to the manifest for signing
@@ -120,6 +106,13 @@ get_signer(){
 	| head -n1
 }
 
+get_group_config(){
+	local group=${1?}
+	gpg --with-colons --list-config group \
+		| grep -i "^cfg:group:${group}:" \
+		|| die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
+}
+
 ### Verify a file has 0-N unique valid detached signatures
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_detached() {
@@ -132,13 +125,6 @@ verify_detached() {
 	local seen_fingerprints=""
 	local fingerprint
 	local signer
-
-	if [ ! -z "$group" ]; then
-		group_config="$( \
-			gpg --with-colons --list-config group \
-				| grep -i "^cfg:group:${group}:" \
-		)" || die "Error: group \"${group}\" not found in ~/.gnupg/gpg.conf"
-	fi
 
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
@@ -155,9 +141,11 @@ verify_detached() {
 		[[ "${seen_fingerprints}" == *"${fingerprint}"* ]] \
 			&& die "Duplicate signature: ${sig_filename}";
 
-		[ ! -z "$group_config" ] \
-			&& [[ "${group_config}" != *"${fingerprint}"* ]] \
+		if [ ! -z "$group" ]; then
+			group_config=$(get_group_config "${group}")
+			[[ "${group_config}" != *"${fingerprint}"* ]] \
 			&& die "Signature not in group \"${group}\": ${sig_filename}";
+		fi
 
 		echo "Verified detached signature by \"${signer}\""
 
@@ -175,10 +163,10 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local threshold="${1}"
 	local group="${2}"
-	local sig_count=0
+	local group_config=""
 	local seen_fingerprints=""
+	local sig_count=0
 	local depth=0
-	#TODO: implement group validation
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
@@ -188,6 +176,12 @@ verify_git(){
 
 		git verify-commit HEAD~${depth} >/dev/null 2>&1\
 			|| die "Unsigned commit: ${commit}"
+
+		if [ ! -z "$group" ]; then
+			group_config=$(get_group_config "${group}")
+			[[ "${group_config}" != *"${fingerprint}"* ]] \
+			&& die "Git signing key not in group \"${group}\": ${fingerprint}";
+		fi
 
 		[[ "${seen_fingerprints}" != *"${fingerprint}"* ]] \
 			&& seen_fingerprints="${seen_fingerprints} ${fingerprint}" \
@@ -208,7 +202,7 @@ verify_git(){
 
 cmd_manifest() {
 	mkdir -p ".${PROGRAM}"
-	printf "$(get_files | xargs openssl sha256 -r)" \
+	printf "%s" "$(get_files | xargs openssl sha256 -r)" \
 		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
 		| LC_ALL=C sort -k2 \
 		> ".${PROGRAM}/manifest.txt"
@@ -225,7 +219,7 @@ cmd_verify() {
 		--) shift; break ;;
 	esac done
 
-	if ( [ -z "$method" ] || [ "$method" == "git" ] ); then
+	if [ -z "$method" ] || [ "$method" == "git" ]; then
 		if [ "$method" == "git" ]; then
 			command -v git >/dev/null 2>&1 \
 			|| die "Error: method 'git' specified and git is not installed"
@@ -235,23 +229,24 @@ cmd_verify() {
 			&& verify_git "${threshold}" "${group}"
 	fi
 
-	if ( [ -z "$method" ] || [ "$method" == "detached" ] ); then
-		( [ -d ".${PROGRAM}" ] && ls .${PROGRAM}/*.asc >/dev/null 2>&1 ) \
+	if [ -z "$method" ] || [ "$method" == "detached" ]; then
+		( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 ) \
 			|| die "Error: No signatures"
 		cmd_manifest
-		verify_detached "${threshold}" "${group}" .${PROGRAM}/manifest.txt
+		verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt
 	fi
 }
 
 cmd_add(){
+	local fingerprint
 	cmd_manifest
-	gpg --armor --detach-sig .${PROGRAM}/manifest.txt
-	local fingerprint=$( \
-		gpg --list-packets .${PROGRAM}/manifest.txt.asc \
+	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
+	fingerprint=$( \
+		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
 			| grep "issuer key ID" \
 			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
 	)
-	mv .${PROGRAM}/manifest.{"txt.asc","${fingerprint}.asc"}
+	mv ."${PROGRAM}"/manifest.{"txt.asc","${fingerprint}.asc"}
 }
 
 cmd_version() {

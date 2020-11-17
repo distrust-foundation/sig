@@ -124,3 +124,37 @@ sig verify --threshold 2 --group myteam --method git
 ```
 sig add
 ```
+
+## Frequently Asked Questions
+
+### Why Bash?
+
+Because it is easy to quickly verify at any time, has wide OS compatibility andthe majority of the needed operations are calling other programs already on
+your system like gpg and openssl.
+
+If this were in another language it would be harder to audit on the fly, would
+require the user to have a specific language toolchain installed, and it would
+still mostly just be a bunch of shell executions to call system binaries
+anyway.
+
+### Why PGP?
+
+In spite of many popular claims to the contrary, PGP is still the most well
+supported protocol for distribution, verification, and signing for keys held
+by individual humans. It is also the only protocoal with wide HSM support
+allowing you to keep keys out of system memory and requier physical approval
+for each operation. E.G a trezor, ledger, or yubikey.
+
+Popular alternatives like signify or straight openssl have poor support for
+these workflows.
+
+Admittedly the GnuPG codebase itself is a buggy dated mess, but PGP as a spec
+is still Pretty Good for many use cases. A recent modern rewrite by a number
+of former GnuPG team members is near complete and set to give PGP a long and
+stable future.
+
+See: https://sequoia-pgp.org/
+
+The only promising alternative to GnuPG for software signing that has hsm
+support and the very attractive feature of expiring signatures is [The Update Framework](https://theupdateframework.io) which may be supported as an alternate
+method in the future if m-of-n multisig is ever implemented.
