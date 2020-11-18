@@ -10,6 +10,8 @@ The simple GPG signature toolchain for directories or git repos.
   * Verify manifest has a minimum threshold of unique detached signatures
   * Verify git history contains a minimum threshold of unique commit siguatures
   * Verify signatures belong to a defined GPG alias group
+  * Allow user to manually verify new keys and add to alias groups on the fly
+  * Prompt user to install or upgrade any required tools as needed
 
 ## Install
 
