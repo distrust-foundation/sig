@@ -1,10 +1,10 @@
 #! /usr/bin/env bash
 set -e
 
-MIN_BASH_VERSION=4
-MIN_GPG_VERSION=2.2
-MIN_OPENSSL_VERSION=1.1
-MIN_GETOPT_VERSION=2.33
+readonly MIN_BASH_VERSION=4
+readonly MIN_GPG_VERSION=2.2
+readonly MIN_OPENSSL_VERSION=1.1
+readonly MIN_GETOPT_VERSION=2.33
 
 ## Private Functions
 
@@ -16,8 +16,8 @@ die() {
 
 ### Bail and instruct user on missing package to install for their platform
 die_pkg() {
-	local package=${1?}
-	local version=${2?}
+	local -r package=${1?}
+	local -r version=${2?}
 	local install_cmd
 	case "$OSTYPE" in
 		linux*)
@@ -71,17 +71,17 @@ check_version(){
 	local pkg="${1?}"
 	local have="${2?}"
 	local need="${3?}"
-    [[ "$have" == "$need" ]] && return 0
-    local IFS=.
-    local i ver1=($have) ver2=($need)
-    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));
-    	do ver1[i]=0;
-    done
-    for ((i=0; i<${#ver1[@]}; i++)); do
-        [[ -z ${ver2[i]} ]] && ver2[i]=0
-        ((10#${ver1[i]} > 10#${ver2[i]})) && return 0
-        ((10#${ver1[i]} < 10#${ver2[i]})) && die_pkg "${pkg}" "${need}"
-    done
+	[[ "$have" == "$need" ]] && return 0
+	local IFS=.
+	local i ver1=($have) ver2=($need)
+	for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));
+		do ver1[i]=0;
+	done
+	for ((i=0; i<${#ver1[@]}; i++)); do
+		[[ -z ${ver2[i]} ]] && ver2[i]=0
+		((10#${ver1[i]} > 10#${ver2[i]})) && return 0
+		((10#${ver1[i]} < 10#${ver2[i]})) && die_pkg "${pkg}" "${need}"
+	done
 }
 
 ### Check if required binaries are installed at appropriate versions
@@ -124,7 +124,7 @@ get_files(){
 
 ### Get primary UID for a given fingerprint
 get_uid(){
-	local fp="${1?}"
+	local -r fp="${1?}"
 	gpg --list-keys --with-colons "${fp}" 2>&1 \
 		| awk -F: '$1 == "uid" {print $10}' \
 		| head -n1
@@ -132,7 +132,7 @@ get_uid(){
 
 ### Get primary fingerprint for given search
 get_primary_fp(){
-	local search="${1?}"
+	local -r search="${1?}"
 	gpg --list-keys --with-colons "${search}" 2>&1 \
 		| awk -F: '$1 == "fpr" {print $10}' \
 		| head -n1
@@ -140,7 +140,7 @@ get_primary_fp(){
 
 ### Get fingerprint for a given pgp file
 get_file_fp(){
-	local filename="${1?}"
+	local -r filename="${1?}"
 	gpg --list-packets "${filename}" \
 		| grep keyid \
 		| sed 's/.*keyid //g'
@@ -148,42 +148,42 @@ get_file_fp(){
 
 ### Get raw gpgconf group config
 group_get_config(){
-    local -r config=$(gpgconf --list-options gpg | grep ^group)
-    printf '%s' "${config##*:}"
+	local -r config=$(gpgconf --list-options gpg | grep ^group)
+	printf '%s' "${config##*:}"
 }
 
 ### Add fingerprint to a given group
 group_add_fp(){
-	local fp=${1?}
-	local group_name=${2?}
+	local -r fp=${1?}
+	local -r group_name=${2?}
+	local -r config=$(group_get_config)
 	local group_names=()
 	local member_lists=()
-    local name member_list config i data
-    local -r config=$(group_get_config)
+	local name member_list config i data
 
-    while IFS=' =' read -rd, name member_list; do
-        group_names+=("${name:1}")
-        member_lists+=("$member_list")
-    done <<< "$config,"
+	while IFS=' =' read -rd, name member_list; do
+		group_names+=("${name:1}")
+		member_lists+=("$member_list")
+	done <<< "$config,"
 
 	printf '%s\n' "${group_names[@]}" \
 		| grep -w "${group_name}" \
 		|| group_names+=("${group_name}")
 
-    for i in "${!group_names[@]}"; do
-    	[ "${group_names[$i]}" == "${group_name}" ] \
-    		&& member_lists[$i]="${member_lists[$i]} ${fp}"
-        data+=$(printf '"%s = %s,' "${group_names[$i]}" "${member_lists[$i]}")
-    done
+	for i in "${!group_names[@]}"; do
+		[ "${group_names[$i]}" == "${group_name}" ] \
+			&& member_lists[$i]="${member_lists[$i]} ${fp}"
+		data+=$(printf '"%s = %s,' "${group_names[$i]}" "${member_lists[$i]}")
+	done
 
-    echo "Adding key \"${fp}\" to group \"${group_name}\""
-    printf 'group:0:%s' "${data%?}" \
-    	| gpgconf --change-options gpg >/dev/null 2>&1
+	echo "Adding key \"${fp}\" to group \"${group_name}\""
+	printf 'group:0:%s' "${data%?}" \
+		| gpgconf --change-options gpg >/dev/null 2>&1
 }
 
 ### Get fingerprints for a given group
 group_get_fps(){
-	local group_name=${1?}
+	local -r group_name=${1?}
 	gpg --with-colons --list-config group \
 		| grep -i "^cfg:group:${group_name}:" \
 		| cut -d ':' -f4
@@ -192,9 +192,9 @@ group_get_fps(){
 ### Check if fingerprint belongs to a given group
 ### Give user option to add it if they wish
 group_check_fp(){
-	local fp=${1?}
-	local group_name=${2?}
-	local -r group_fps=$( group_get_fps "${group_name}" )
+	local -r fp=${1?}
+	local -r group_name=${2?}
+	local -r group_fps=$(group_get_fps "${group_name}")
 	local -r uid=$(get_uid "${fp}")
 
 	if [ -z "$group_fps" ] \
@@ -220,13 +220,10 @@ group_check_fp(){
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_detached() {
 	[ $# -eq 3 ] || die "Usage: verify_detached <threshold> <group> <file>"
-	local threshold="${1}"
-	local group="${2}"
-	local filename="${3}"
-	local sig_count=0
-	local seen_fps=""
-	local fp
-	local uid
+	local -r threshold="${1}"
+	local -r group="${2}"
+	local -r filename="${3}"
+	local fp uid sig_count=0 seen_fps=""
 
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
@@ -259,11 +256,9 @@ verify_detached() {
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
-	local threshold="${1}"
-	local group="${2}"
-	local seen_fps=""
-	local sig_count=0
-	local depth=0
+	local -r threshold="${1}"
+	local -r group="${2}"
+	local seen_fps="" sig_count=0 depth=0
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
@@ -378,7 +373,7 @@ cmd_usage() {
 check_tools head cut find sort sed getopt gpg openssl
 
 # Allow entire script to be namespaced based on filename
-PROGRAM="${0##*/}"
+readonly PROGRAM="${0##*/}"
 
 # Export public sub-commands
 case "$1" in
