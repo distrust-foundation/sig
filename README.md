@@ -34,7 +34,7 @@ The simple GPG signature toolchain for directories or git repos.
 
       ```
       for file in .sig/*.asc; do gpg --verify $file .sig/manifest.txt; done
-      gpg log --show-signature
+      git log --show-signature
       less sig
       ```
 
