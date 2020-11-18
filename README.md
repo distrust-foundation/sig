@@ -143,12 +143,9 @@ anyway.
 
 In spite of many popular claims to the contrary, PGP is still the most well
 supported protocol for distribution, verification, and signing for keys held
-by individual humans. It is also the only protocoal with wide HSM support
-allowing you to keep keys out of system memory and requier physical approval
-for each operation. E.G a trezor, ledger, or yubikey.
-
-Popular alternatives like signify or straight openssl have poor support for
-these workflows.
+by individual humans. It is also the only protocol with wide HSM support
+allowing you to keep keys out of system memory and require physical approval
+for each operation. E.G a trezor, ledger, yubikey, etc.
 
 Admittedly the GnuPG codebase itself is a buggy dated mess, but PGP as a spec
 is still Pretty Good for many use cases. A recent modern rewrite by a number
@@ -157,6 +154,36 @@ stable future.
 
 See: https://sequoia-pgp.org/
 
-The only promising alternative to GnuPG for software signing that has hsm
-support and the very attractive feature of expiring signatures is [The Update Framework](https://theupdateframework.io) which may be supported as an alternate method in the future
-if m-of-n multisig is ever implemented.
+### Why not "notary" ?
+
+Notary is very well designed and well supports many HSMs.
+
+It may be worth supporting as an alternate method in the future if m-of-n
+multisig is ever implemented as a part of the TUF specification which has been
+on their TODO list for a few years now.
+
+It has the very desirable feature of conditionally expiring signatures which
+no other solution has at the time of this writing, which comes from it being
+purpose built for software signing concerns.
+
+See: [The Update Framework](https://theupdateframework.io)
+
+### Why not straight "openssl" ?
+
+Openssl has HSM support via OpenSC that is fairly well supported via PKSC#11.
+
+Contributions suggesting this an alterantive backend to OpenPGP are welcome,
+however they would have to also come with methods for key discovery and pinned
+key groups via configuration files of some kind.
+
+PGP gives us these features almost for free.
+
+### Why not "signify", "age", or "crev" ?
+
+These alternatives have poor if any support for HSM workflows and thus put
+private keys at too much risk of theft or loss to recommend for general use at
+this time.
+
+That said, verifying folders/repos that use these methods is certianly of value
+and contributions to support doing this on systems where those tools are
+available are welcome.
