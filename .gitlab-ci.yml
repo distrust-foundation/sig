@@ -1,0 +1,7 @@
+before_script:
+  - docker info
+
+test:
+  script:
+    - make lint
+    - make test

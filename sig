@@ -227,7 +227,7 @@ verify_detached() {
 
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
-			echo "Invalid signature: ${sig_filename}";
+			echo "Invalid detached signature: ${sig_filename}";
 			exit 1;
 		}
 		file_fp=$( get_file_fp "${sig_filename}" )

@@ -1,6 +1,10 @@
 #!/bin/bash
 
 setup(){
+	test -f /usr/bin/git || sudo apt install --reinstall -y git
+	test -f /usr/bin/getopt || sudo apt install --reinstall -y util-linux
+	test -f /usr/bin/gpg || sudo apt install --reinstall -y gpg
+	test -f /usr/bin/openssl || sudo apt install --reinstall -y openssl
 	bin_dir=/tmp/bin
 	temp_dir=$(mktemp -d -t test-XXXXXXXXXX)
 	mkdir -p /tmp/bin
@@ -18,12 +22,4 @@ set_identity(){
 	echo "set key to $name"
 	git config --global user.email "${name}@example.com"
 	git config --global user.name "${name}"
-}
-
-mask_command(){
-	local -r command="${1?}"
-	echo "echo >&2 \"bash: ${command}: command not found\" && exit 127" \
-		> "${command}"
-	chmod +x "${command}"
-	export PATH="$PWD:$PATH" "${command}"
 }
