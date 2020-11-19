@@ -3,9 +3,9 @@ test: test-image
 	docker run \
 		--rm \
 		--interactive \
-		--volume $(PWD)/:/home/test/ \
+		--volume $(PWD)/:/home/test/sig \
 		local/sig-test \
-		bats test/test.bats
+		bats sig/test/test.bats
 
 .PHONY: test-image
 test-image:
@@ -19,6 +19,6 @@ test-shell: test-shell
 	docker run \
 		--rm \
 		--interactive \
-		--volume $(PWD)/:/home/test/ \
+		--volume $(PWD)/:/home/test/sig \
 		local/sig-test \
 		bash
