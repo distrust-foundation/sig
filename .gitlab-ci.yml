@@ -4,12 +4,10 @@ services:
   - docker:dind
 
 before_script:
-  - apk add make git gnupg openssl bash util-linux
+  - apk add make
 
 test:
   script:
     - make lint
     - make test
-    - mkdir -p ~/.gnupg/
-    - echo "group maintainers = 154E6BB21AA3ADAA1AE8E4C3B11B4A3F97FE0C65 D37EA2C705C8125024932FF3008DDBA577B40593 000BB588C6908039A1E7B033552ECE18615AA0CF 0993C738D2D0B3B4B70E4CEBB62C48C8CAFFFC09 E68A304BC1806237B05CD2A21667D82C2BF9F3E1 6B61ECD76088748C70590D55E90A401336C8AAA9" >> ~/.gnupg/gpg.conf
-    - ./sig verify --threshold 3 --group maintainers
+    - make verify

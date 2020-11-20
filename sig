@@ -178,6 +178,7 @@ group_add_fp(){
 	done
 
 	echo "Adding key \"${fp}\" to group \"${group_name}\""
+	gpg --list-keys >/dev/null 2>&1
 	printf 'group:0:%s' "${data%?}" \
 		| gpgconf --change-options gpg >/dev/null 2>&1
 }
@@ -330,6 +331,48 @@ cmd_verify() {
 	fi
 }
 
+cmd_fetch() {
+	local opts group="" group_fps=""
+	opts="$(getopt -o g: -l group: -n "$PROGRAM" -- "$@")"
+	eval set -- "$opts"
+	while true; do case $1 in
+		-g|--group) group="${2:-1}"; shift 2 ;;
+		--) shift; break ;;
+	esac done
+	[ $# -eq 1 ] || \
+		die "Usage: $PROGRAM fetch <fingerprint> [-g,--group=<group>]"
+	local -r fingerprint=${1}
+
+	if [ ! -z "$group" ]; then
+		group_fps=$(group_get_fps "${group_name}")
+		if [[ "${group_fps}" == *"${fingerprint}"* ]]; then
+			echo "Key \"${fingerprint}\" is already in group \"${group}\""
+		else
+			group_add_fp "${fingerprint}" "${group}"
+		fi
+	fi
+
+	gpg --list-keys "${fingerprint}" > /dev/null 2>&1 \
+		&& echo "Key \"${fingerprint}\" is already in local keychain" \
+		&& return 0
+
+	echo "Requested key is not in keyring. Trying keyservers..."
+	for server in \
+        ha.pool.sks-keyservers.net \
+        hkp://keyserver.ubuntu.com:80 \
+        hkp://p80.pool.sks-keyservers.net:80 \
+        pgp.mit.edu \
+    ; do \
+        echo "Fetching key "${fingerprint}" from ${server}"; \
+       	gpg \
+       		--recv-key \
+       		--keyserver "$server" \
+       		--keyserver-options timeout=10 \
+       		--recv-keys "${fingerprint}" \
+       	&& break; \
+    done
+}
+
 cmd_add(){
 	cmd_manifest
 	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
@@ -357,10 +400,12 @@ cmd_usage() {
 	cmd_version
 	cat <<-_EOF
 	Usage:
-	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
-	        Verify m-of-n signatures by given group are present for directory
 	    $PROGRAM add
 	        Add signature to manifest for this directory
+	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
+	        Verify m-of-n signatures by given group are present for directory
+	    $PROGRAM fetch [-g,--group=<group>]
+	    	Fetch key by fingerprint. Optionally add to group.
 	    $PROGRAM manifest
 	        Generate hash manifest for this directory
 	    $PROGRAM help
@@ -381,6 +426,7 @@ case "$1" in
 	verify)            shift; cmd_verify   "$@" ;;
 	add)               shift; cmd_add      "$@" ;;
 	manifest)          shift; cmd_manifest "$@" ;;
+	fetch)             shift; cmd_fetch    "$@" ;;
 	version|--version) shift; cmd_version  "$@" ;;
 	help|--help)       shift; cmd_usage    "$@" ;;
 	*)                        cmd_usage    "$@" ;;
