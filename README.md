@@ -58,6 +58,8 @@ The simple GPG signature toolchain for directories or git repos.
   * Add signature to manifest for this directory
 * sig manifest
   * Generate hash manifest for this directory
+* sig fetch [-g,--group=<group>]
+  * Fetch key by fingerprint. Optionally add to group.
 * sig help
   * Show help text.
 * sig version
