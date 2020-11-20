@@ -74,7 +74,7 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
-@test "Can verify git repo has signed commits by three different identities" {
+@test "Verify succeeds when 3/3 unique git sig requirement is satisfied" {
 
 	git init
 
@@ -97,4 +97,15 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
+@test "Verify fails when 2/2 unique git sig requirement is not satisfied" {
 
+	git init
+
+	set_identity "user1"
+	echo "test string 1" > somefile1
+	git add .
+	git commit -m "user1 commit"
+
+	run sig verify --method git --threshold 2
+	[ "$status" -eq 1 ]
+}
