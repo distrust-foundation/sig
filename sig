@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 set -e
 
-readonly MIN_BASH_VERSION=4
+readonly MIN_BASH_VERSION=5
 readonly MIN_GPG_VERSION=2.2
 readonly MIN_OPENSSL_VERSION=1.1
 readonly MIN_GETOPT_VERSION=2.33
@@ -71,9 +71,10 @@ check_version(){
 	local pkg="${1?}"
 	local have="${2?}"
 	local need="${3?}"
+	local i ver1 ver2 IFS='.'
 	[[ "$have" == "$need" ]] && return 0
-	local IFS=.
-	local i ver1=($have) ver2=($need)
+	read -r -a ver1 <<< "$have"
+	read -r -a ver2 <<< "$need"
 	for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));
 		do ver1[i]=0;
 	done
