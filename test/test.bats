@@ -63,3 +63,38 @@ load test_helper
 	run grep 37d2046a395cbfc .sig/manifest.txt
 	[ "$status" -eq 0 ]
 }
+
+@test "Can verify git repo has signed commits by anyone" {
+	set_identity "user1"
+	echo "test string" > somefile
+	git init
+	git add .
+	git commit -m "initial commit"
+	run sig verify --method git
+	[ "$status" -eq 0 ]
+}
+
+@test "Can verify git repo has signed commits by three different identities" {
+
+	git init
+
+	set_identity "user1"
+	echo "test string 1" > somefile1
+	git add .
+	git commit -m "user1 commit"
+
+	set_identity "user2"
+	echo "test string 2" > somefile2
+	git add .
+	git commit -m "user2 commit"
+
+	set_identity "user3"
+	echo "test string 3" > somefile3
+	git add .
+	git commit -m "user3 commit"
+
+	run sig verify --method git --threshold 3
+	[ "$status" -eq 0 ]
+}
+
+

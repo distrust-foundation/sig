@@ -1,3 +1,6 @@
+.PHONY: all
+all: lint test verify
+
 .PHONY: test
 test: test-image
 	docker run \

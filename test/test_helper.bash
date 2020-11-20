@@ -11,6 +11,9 @@ setup(){
 	cp /home/test/sig/sig /tmp/bin/sig
 	export PATH=${bin_dir}:${PATH}
 	cd "$temp_dir" || return 1
+	rm -rf ~/.gnupg
+	rm -rf ~/.gitconfig
+	killall gpg-agent || :
 }
 
 teardown(){
@@ -19,7 +22,20 @@ teardown(){
 
 set_identity(){
 	local -r name="${1?}"
-	echo "set key to $name"
+	killall gpg-agent || :
+	rm -rf ~/.gnupg || :
+	rm -rf ~/.gitconfig || :
+	gpg --import ${HOME}/sig/test/keys/*.pub.asc
+	gpg --import ${HOME}/sig/test/keys/${name}.sec.asc
+	local -r fingerprint=$( \
+		gpg --list-keys --with-colons "${name}" 2>&1 \
+		| awk -F: '$1 == "fpr" {print $10}' \
+		| head -n1 \
+    )
 	git config --global user.email "${name}@example.com"
 	git config --global user.name "${name}"
+	git config --global user.signingKey "${fingerprint}"
+	git config --global commit.gpgSign "true"
+	git config --global merge.gpgSign "true"
+	echo "default-key ${fingerprint}" > ~/.gnupg/gpg.conf
 }
