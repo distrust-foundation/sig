@@ -1,13 +1,11 @@
-image: docker:latest
-
-services:
-  - docker:dind
-
-before_script:
-  - apt-get install -y make
-  - docker info
-
 test:
+  stage: test
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - apt-get install -y make
+    - docker info
   script:
     - make lint
     - make test
