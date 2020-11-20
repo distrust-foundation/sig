@@ -1,6 +1,6 @@
 image: docker:dind
 
-stage: test
+services:
   - docker:dind
 
 before_script:
