@@ -27,6 +27,7 @@ test-image:
 test-shell: test-image
 	docker run \
 		--rm \
+		--tty \
 		--interactive \
 		--volume $(PWD)/:/home/test/sig \
 		local/sig-test \

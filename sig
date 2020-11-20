@@ -112,7 +112,7 @@ check_tools(){
 ### Get files that will be added to the manifest for signing
 ### Use git if available, else fall back to find
 get_files(){
-	if command -v git >/dev/null; then
+	if [ -d '.git' ] && command -v git >/dev/null; then
 		git ls-files | grep -v ".${PROGRAM}"
 	else
 		find . \
