@@ -4,6 +4,7 @@ services:
   - docker:dind
 
 before_script:
+  - apt-get install -y make
   - docker info
 
 test:
