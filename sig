@@ -363,7 +363,7 @@ cmd_fetch() {
         hkp://p80.pool.sks-keyservers.net:80 \
         pgp.mit.edu \
     ; do \
-        echo "Fetching key "${fingerprint}" from ${server}"; \
+        echo "Fetching key \"${fingerprint}\" from \"${server}\""; \
        	gpg \
        		--recv-key \
        		--keyserver "$server" \
