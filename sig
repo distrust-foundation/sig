@@ -362,14 +362,14 @@ cmd_fetch() {
         hkp://keyserver.ubuntu.com:80 \
         hkp://p80.pool.sks-keyservers.net:80 \
         pgp.mit.edu \
-    ; do \
-        echo "Fetching key \"${fingerprint}\" from \"${server}\""; \
+    ; do
+        echo "Fetching key \"${fingerprint}\" from \"${server}\"";
        	gpg \
        		--recv-key \
        		--keyserver "$server" \
        		--keyserver-options timeout=10 \
        		--recv-keys "${fingerprint}" \
-       	&& break; \
+       	&& break
     done
 }
 
