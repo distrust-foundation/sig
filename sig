@@ -264,7 +264,7 @@ verify_git(){
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
-		commit=$(git log --format="%H" "$ref")
+		commit=$(git log --format="%H" "$ref" -n1)
 		fp=$(git log --format="%GP" "$ref" -n1 )
 		uid=$( get_uid "${fp}" )
 
