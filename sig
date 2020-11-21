@@ -27,6 +27,8 @@ die_pkg() {
 				install_cmd="yum install ${package}"
 			elif command -v "pacman" >/dev/null; then
 				install_cmd="pacman -Ss ${package}"
+			elif command -v "emerge" >/dev/null; then
+				install_cmd="emerge ${package}"
 			elif command -v "nix-env" >/dev/null; then
 				install_cmd="nix-env -i ${package}"
 			fi
@@ -41,6 +43,7 @@ die_pkg() {
 }
 
 ### Ask user to make a binary decision
+### If not an interactive terminal: auto-accept default
 ask() {
 	local prompt default
 	while true; do

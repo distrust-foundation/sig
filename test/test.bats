@@ -64,7 +64,7 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
-@test "Can verify git repo has signed commits by anyone" {
+@test "Verify succeeds when 1 unique git sig requirement is satisifed" {
 	set_identity "user1"
 	echo "test string" > somefile
 	git init
@@ -74,38 +74,126 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
-@test "Verify succeeds when 3/3 unique git sig requirement is satisfied" {
-
+@test "Verify succeeds when 3 unique git sig requirement is satisfied" {
 	git init
-
 	set_identity "user1"
 	echo "test string 1" > somefile1
 	git add .
 	git commit -m "user1 commit"
-
 	set_identity "user2"
 	echo "test string 2" > somefile2
 	git add .
 	git commit -m "user2 commit"
-
 	set_identity "user3"
 	echo "test string 3" > somefile3
 	git add .
 	git commit -m "user3 commit"
-
 	run sig verify --method git --threshold 3
 	[ "$status" -eq 0 ]
 }
 
-@test "Verify fails when 2/2 unique git sig requirement is not satisfied" {
-
+@test "Verify fails when 2 unique git sig requirement is not satisfied" {
 	git init
-
 	set_identity "user1"
 	echo "test string 1" > somefile1
 	git add .
 	git commit -m "user1 commit"
-
 	run sig verify --method git --threshold 2
+	[ "$status" -eq 1 ]
+}
+
+@test "Verify succeeds when 1 group git sig requirement is satisifed" {
+	set_identity "user1"
+	echo "test string" > somefile
+	git init
+	git add .
+	git commit -m "initial commit"
+	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
+	run sig verify --method git --group maintainers
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify succeeds when 3 group git sig requirement is satisifed" {
+	set_identity "user1"
+	echo "test string" > somefile1
+	git init
+	git add .
+	git commit -m "User 1 Commit"
+	set_identity "user2"
+	echo "test string" > somefile2
+	git init
+	git add .
+	git commit -m "User 2 Commit"
+	set_identity "user3"
+	echo "test string" > somefile3
+	git init
+	git add .
+	git commit -m "User 3 Commit"
+	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
+	sig fetch --group maintainers BE4D60F6CFD2237A8AF978583C51CADD33BD0EE8
+	sig fetch --group maintainers 3E45AC9E190B4EE32BAE9F61A331AFB540761D69
+	run sig verify --method git --threshold 3 --group maintainers
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify fails when 2 group git sig requirement is not satisifed" {
+	set_identity "user1"
+	echo "test string" > somefile
+	git init
+	git add .
+	git commit -m "initial commit"
+	run sig verify --method git --threshold 2 --group maintainers
+	[ "$status" -eq 1 ]
+}
+
+@test "Verify succeeds when 1 unique detached sig requirement is satisifed" {
+	set_identity "user1"
+	run sig add
+	run sig verify --method detached
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify succeeds when 2 unique detached sig requirement is satisifed" {
+	set_identity "user1"
+	run sig add
+	set_identity "user2"
+	run sig add
+	run sig verify --threshold 2 --method detached
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify fails when 2 unique detached sig requirement is not satisifed" {
+	set_identity "user1"
+	run sig add
+	run sig verify --threshold 2 --method detached
+	[ "$status" -eq 1 ]
+}
+
+@test "Verify succeeds when 1 group detached sig requirement is satisifed" {
+	set_identity "user1"
+	sig add
+	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
+	run sig verify --method detached --group maintainers
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify succeeds when 3 group detached sig requirement is satisifed" {
+	set_identity "user1"
+	sig add
+	set_identity "user2"
+	sig add
+	set_identity "user3"
+	sig add
+	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
+	sig fetch --group maintainers BE4D60F6CFD2237A8AF978583C51CADD33BD0EE8
+	sig fetch --group maintainers 3E45AC9E190B4EE32BAE9F61A331AFB540761D69
+	run sig verify --method detached --threshold 3 --group maintainers
+	[ "$status" -eq 0 ]
+}
+
+@test "Verify fails when 2 group detached sig requirement is not satisifed" {
+	set_identity "user1"
+	sig add
+	run sig verify --method detached --threshold 2 --group maintainers
 	[ "$status" -eq 1 ]
 }
