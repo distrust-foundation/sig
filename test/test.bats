@@ -197,3 +197,29 @@ load test_helper
 	run sig verify --method detached --threshold 2 --group maintainers
 	[ "$status" -eq 1 ]
 }
+
+@test "Verify diff shows changes between feature branch and verified master" {
+	git init
+
+	set_identity "user1"
+	echo "test string" > testfile
+	sig add
+	git add .
+	git commit -m "User 1 Commit"
+
+	set_identity "user2"
+	sig add
+	git add .
+	git commit -m "User 2 Commit"
+
+	set_identity "user1"
+	git checkout -b feature_branch
+	echo "updated test string" > somefile1
+	sig add
+	git add .
+	git commit -m "User 1 Update Commit"
+
+	run sig verify --diff master --method detached --threshold 2
+	[ "$status" -eq 1 ]
+	echo "${output}" | grep "updated test string"
+}

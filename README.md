@@ -52,7 +52,7 @@ The simple GPG signature toolchain for directories or git repos.
 
 ## Usage
 
-* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
+* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ] [-d,--diff=<branch>]
   * Verify m-of-n signatures by given group are present for directory
 * sig add
   * Add signature to manifest for this directory
@@ -119,7 +119,13 @@ sig verify --threshold 2
 #### Verify 3 unique signatures from specified signing group via Git method
 
 ```
-sig verify --threshold 2 --group myteam --method git
+sig verify --threshold 3 --group myteam --method git
+```
+
+#### Verify 2 unique signatures via detached method and diff on failure
+
+```
+sig verify --threshold 2 --diff master --method detached
 ```
 
 #### Add Detached Signature

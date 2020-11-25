@@ -8,7 +8,7 @@ readonly MIN_GETOPT_VERSION=2.33
 
 ## Private Functions
 
-### Bail with error message
+### Exit with error message
 die() {
 	echo "$@" >&2
 	exit 1
@@ -117,7 +117,11 @@ check_tools(){
 ### Use git if available, else fall back to find
 get_files(){
 	if [ -d '.git' ] && command -v git >/dev/null; then
-		git ls-files | grep -v ".${PROGRAM}"
+		git ls-files \
+			--cached \
+			--others \
+			--exclude-standard \
+		| grep -v ".${PROGRAM}"
 	else
 		find . \
 			-type f \
@@ -233,27 +237,33 @@ verify_detached() {
 	for sig_filename in "${filename%.*}".*.asc; do
 		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
 			echo "Invalid detached signature: ${sig_filename}";
-			exit 1;
+			return 1;
 		}
 		file_fp=$( get_file_fp "${sig_filename}" )
 		fp=$( get_primary_fp "${file_fp}" )
 		uid=$( get_uid "${fp}" )
 
-		[[ "${seen_fps}" == *"${fp}"* ]] \
-			&& die "Duplicate signature: ${sig_filename}";
+		[[ "${seen_fps}" == *"${fp}"* ]] && {
+			echo "Duplicate signature: ${sig_filename}";
+			return 1;
+		}
 
 		echo "Verified detached signature by \"${uid}\""
 
 		if [ ! -z "${group}" ]; then
-			group_check_fp "${fp}" "${group}" \
-				|| die "Detached signing key not in group \"${group}\": ${fp}";
+			group_check_fp "${fp}" "${group}" || {
+				echo "Detached signing key not in group \"${group}\": ${fp}";
+				return 1;
+			}
 		fi
 
 		seen_fps="${seen_fps} ${fp}"
 		((sig_count=sig_count+1))
 	done
-	[[ "${sig_count}" -ge "${threshold}" ]] || \
-		die "Minimum detached signatures not found: ${sig_count}/${threshold}";
+	[[ "${sig_count}" -ge "${threshold}" ]] || {
+		echo "Minimum detached signatures not found: ${sig_count}/${threshold}";
+		return 1;
+	}
 }
 
 ### Verify all commits in git repo have valid signatures
@@ -263,7 +273,7 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local -r threshold="${1}"
 	local -r group="${2}"
-	local seen_fps="" sig_count=0 depth=0
+	local seen_fps="" sig_count=0 depth=0 ref commit fp uid
 
 	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
 		ref=HEAD~${depth}
@@ -271,8 +281,10 @@ verify_git(){
 		fp=$(git log --format="%GP" "$ref" -n1 )
 		uid=$( get_uid "${fp}" )
 
-		git verify-commit HEAD~${depth} >/dev/null 2>&1\
-			|| die "Unsigned commit: ${commit}"
+		git verify-commit HEAD~${depth} >/dev/null 2>&1 || {
+			echo "Unsigned commit: ${commit}";
+			return 1;
+		}
 
 		if [[ "${seen_fps}" != *"${fp}"* ]]; then
 			seen_fps="${seen_fps} ${fp}"
@@ -281,8 +293,10 @@ verify_git(){
 		fi
 
 		if [ ! -z "$group" ]; then
-			group_check_fp "${fp}" "${group}" \
-				|| die "Git signing key not in group \"${group}\": ${fp}"
+			group_check_fp "${fp}" "${group}" || {
+				echo "Git signing key not in group \"${group}\": ${fp}";
+				return 1;
+			}
 		fi
 
 		[[ "${sig_count}" -ge "${threshold}" ]] && break;
@@ -290,10 +304,75 @@ verify_git(){
 		((depth=depth+1))
 	done
 
-	[[ "${sig_count}" -ge "${threshold}" ]] \
-		|| die "Minimum git signatures not found: ${sig_count}/${threshold}";
+	[[ "${sig_count}" -ge "${threshold}" ]] || {
+		echo "Minimum git signatures not found: ${sig_count}/${threshold}";
+		return 1;
+	}
 }
 
+get_temp(){
+	echo "$(
+		mktemp \
+			--quiet \
+			--directory \
+			-t "$(basename "$0").XXXXXX" 2>/dev/null \
+		|| mktemp \
+			--quiet \
+			--directory
+	)"
+}
+
+verify_git_diff(){
+	[ $# -eq 4 ] \
+		|| die "Usage: verify_git_diff <ref> <threshold> <group> <method>"
+	command -v git >/dev/null 2>&1 \
+		|| die "Error: verify diff requires 'git' which is not installed"
+	local -r diff_ref=${1}
+	local -r threshold=${2}
+	local -r group=${3}
+	local -r method=${4}
+	local -r temp_repo=$(get_temp)
+	local -r git_root=$(git rev-parse --show-toplevel)
+	local -r curr_ref=$(git rev-parse HEAD)
+	set -x
+	cp -a "${git_root}/." "${temp_repo}/"
+	cd "${temp_repo}"
+	git reset --hard "${diff_ref}" >/dev/null 2>&1
+	if verify "${threshold}" "${group}" "${method}"; then
+		git --no-pager diff "${diff_ref}" "${curr_ref}"
+	else
+		echo "Verification of specifed diff ref failed: ${ref}"
+	fi
+	set +x
+}
+
+verify(){
+	[ $# -eq 3 ] || die "Usage: verify <threshold> <group> <method>"
+	local -r threshold=${1}
+	local -r group=${2}
+	local -r method=${3}
+	if [ -z "$method" ] || [ "$method" == "git" ]; then
+		if [ "$method" == "git" ]; then
+			command -v git >/dev/null 2>&1 \
+			|| die "Error: method 'git' specified and git is not installed"
+		fi
+		if command -v git >/dev/null 2>&1 \
+			&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 );
+		then
+			verify_git "${threshold}" "${group}" || return 1
+		fi
+	fi
+
+	if [ -z "$method" ] || [ "$method" == "detached" ]; then
+		( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 ) || {
+			echo "Error: No signatures";
+			return 1;
+		}
+		cmd_manifest || return 1
+		verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt \
+			|| return 1
+	fi
+}
 
 ## Public Commands
 
@@ -306,32 +385,26 @@ cmd_manifest() {
 }
 
 cmd_verify() {
-	local opts threshold=1 group="" method=""
-	opts="$(getopt -o t:g:m: -l threshold:,group:,method: -n "$PROGRAM" -- "$@")"
+	local opts threshold=1 group="" method="" diff=""
+	local -r args="$@"
+	opts="$(getopt -o t:g:m:d: -l threshold:,group:,method:,diff: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
 		-t|--threshold) threshold="$2"; shift 2 ;;
 		-g|--group) group="$2"; shift 2 ;;
 		-m|--method) method="$2"; shift 2 ;;
+		-d|--diff) diff="$2"; shift 2 ;;
 		--) shift; break ;;
 	esac done
 
-	if [ -z "$method" ] || [ "$method" == "git" ]; then
-		if [ "$method" == "git" ]; then
-			command -v git >/dev/null 2>&1 \
-			|| die "Error: method 'git' specified and git is not installed"
-		fi
-		command -v git >/dev/null 2>&1 \
-			&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 ) \
-			&& verify_git "${threshold}" "${group}"
+	if verify "$threshold" "$group" "$method"; then
+		return 0
+	elif [ ! -z "$diff" ]; then
+		echo "Verification failed."
+		echo "Attempting verified diff against git ref ${diff} ..."
+		verify_git_diff "$diff" "$threshold" "$group" "$method"
 	fi
-
-	if [ -z "$method" ] || [ "$method" == "detached" ]; then
-		( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 ) \
-			|| die "Error: No signatures"
-		cmd_manifest
-		verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt
-	fi
+	return 1
 }
 
 cmd_fetch() {
@@ -405,8 +478,8 @@ cmd_usage() {
 	Usage:
 	    $PROGRAM add
 	        Add signature to manifest for this directory
-	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ]
-	        Verify m-of-n signatures by given group are present for directory
+	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ] [d,--diff=<branch>]
+	        Verify m-of-n signatures by given group are present for directory.
 	    $PROGRAM fetch [-g,--group=<group>]
 	    	Fetch key by fingerprint. Optionally add to group.
 	    $PROGRAM manifest
