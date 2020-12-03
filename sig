@@ -266,8 +266,8 @@ verify_detached() {
 	}
 }
 
-### Verify all commits in git repo have valid signatures
-### Optionally verify a minimum number of valid unique signatures
+### Verify head commit is signed
+### Optionally verify unique signed git tags to meet a threshold
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
@@ -275,39 +275,45 @@ verify_git(){
 	local -r group="${2}"
 	local seen_fps="" sig_count=0 depth=0 ref commit fp uid
 
-	while [[ $depth != "$(git rev-list --count HEAD)" ]]; do
-		ref=HEAD~${depth}
-		commit=$(git log --format="%H" "$ref" -n1)
-		fp=$(git log --format="%GP" "$ref" -n1 )
-		uid=$( get_uid "${fp}" )
+	git verify-commit HEAD >/dev/null 2>&1 \
+		|| die "HEAD commit not signed"
 
-		git verify-commit HEAD~${depth} >/dev/null 2>&1 || {
-			echo "Unsigned commit: ${commit}";
-			return 1;
-		}
+	fp=$(git log --format="%GP" HEAD -n1 )
+	seen_fps="${fp}"
+	sig_count=1
+	uid=$( get_uid "${fp}" )
+	echo "Verified signed git commit by \"${uid}\""
 
-		if [[ "${seen_fps}" != *"${fp}"* ]]; then
+	for tag in $(git tag --points-at HEAD); do
+		git tag --verify "$tag" >/dev/null 2>&1 && {
+			fp=$( \
+				git verify-tag --raw extra-sig 2>&1 \
+					| grep VALIDSIG \
+					| sed 's/.*VALIDSIG \([A-Z0-9]\+\).*/\1/g' \
+			)
+			uid=$( get_uid "${fp}" )
 			seen_fps="${seen_fps} ${fp}"
-			((sig_count=sig_count+1))
-			echo "Verified git signature at depth ${depth} by \"${uid}\""
-		fi
-
-		if [ ! -z "$group" ]; then
-			group_check_fp "${fp}" "${group}" || {
-				echo "Git signing key not in group \"${group}\": ${fp}";
-				return 1;
-			}
-		fi
-
-		[[ "${sig_count}" -ge "${threshold}" ]] && break;
-
-		((depth=depth+1))
+			if [[ "${seen_fps}" != *"${fp}"* ]]; then
+				seen_fps="${seen_fps} ${fp}"
+				echo "Verified signed git tag by \"${uid}\""
+				((sig_count=sig_count+1))
+			fi
+		}
 	done
 
 	[[ "${sig_count}" -ge "${threshold}" ]] || {
 		echo "Minimum git signatures not found: ${sig_count}/${threshold}";
 		return 1;
 	}
+
+	if [ ! -z "$group" ]; then
+		for fp in "${seen_fps}"; do
+			group_check_fp "${fp}" "${group}" || {
+				echo "Git signing key not in group \"${group}\": ${fp}";
+				return 1;
+			}
+		done
+	fi
 }
 
 get_temp(){
@@ -449,7 +455,7 @@ cmd_fetch() {
     done
 }
 
-cmd_add(){
+sign_detached(){
 	cmd_manifest
 	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
 	local -r fp=$( \
@@ -458,6 +464,49 @@ cmd_add(){
 			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
 	)
 	mv ."${PROGRAM}"/manifest.{"txt.asc","${fp}.asc"}
+}
+
+sign_tag(){
+	[ -d '.git' ] \
+		|| die "Not a git repository"
+	command -v git >/dev/null \
+		|| die "Git not installed"
+	git config --get user.signingKey >/dev/null \
+		|| die "Git user.signingKey not set"
+	local -r push="${1}"
+	local -r short_hash=$(git rev-parse --short HEAD)
+	local -r signing_fp=$( \
+		git config --get user.signingKey \
+			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
+	)
+	local -r name="sig-${short_hash}-${signing_fp}"
+	git tag -fsm "$name" "$name"
+	[[ $push -eq 1 ]] && git push --tags
+}
+
+cmd_add(){
+	local opts method="default" push=0
+	local -r args="$@"
+	opts="$(getopt -o m:p:: -l method:push:: -n "$PROGRAM" -- "$@")"
+	eval set -- "$opts"
+	while true; do case $1 in
+		-m|--method) method="$2"; shift 2 ;;
+		-p|--push) push="1"; shift 2 ;;
+		--) shift; break ;;
+	esac done
+	case $method in
+		default)
+			if [ -d '.git' ]; then
+				sign_tag "$push"
+			else
+				sign_detached
+			fi
+			;;
+		detached) sign_detached ;;
+		git) sign_tag "$push" ;;
+		*) cmd_help ;;
+		--) shift; break ;;
+	esac
 }
 
 cmd_version() {
@@ -476,7 +525,7 @@ cmd_usage() {
 	cmd_version
 	cat <<-_EOF
 	Usage:
-	    $PROGRAM add
+	    $PROGRAM add [-m,--method=<git|detached>] [-p,--push]
 	        Add signature to manifest for this directory
 	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ] [d,--diff=<branch>]
 	        Verify m-of-n signatures by given group are present for directory.
