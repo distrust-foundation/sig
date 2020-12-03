@@ -316,6 +316,7 @@ verify_git(){
 	fi
 }
 
+## Get temporary dir reliably across different mktemp implementations
 get_temp(){
 	echo "$(
 		mktemp \
@@ -328,6 +329,8 @@ get_temp(){
 	)"
 }
 
+
+## Verify specified branch and show diff between that and current HEAD
 verify_git_diff(){
 	[ $# -eq 4 ] \
 		|| die "Usage: verify_git_diff <ref> <threshold> <group> <method>"
@@ -352,6 +355,7 @@ verify_git_diff(){
 	set +x
 }
 
+## Verify current folder/repo with specified signing rules
 verify(){
 	[ $# -eq 3 ] || die "Usage: verify <threshold> <group> <method>"
 	local -r threshold=${1}
@@ -379,6 +383,40 @@ verify(){
 			|| return 1
 	fi
 }
+
+## Add detached signature for contents of this folder
+sign_detached(){
+	cmd_manifest
+	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
+	local -r fp=$( \
+		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
+			| grep "issuer key ID" \
+			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
+	)
+	mv ."${PROGRAM}"/manifest.{"txt.asc","${fp}.asc"}
+}
+
+## Add signed tag pointing at this commit.
+## Optionally push to origin.
+sign_tag(){
+	[ -d '.git' ] \
+		|| die "Not a git repository"
+	command -v git >/dev/null \
+		|| die "Git not installed"
+	git config --get user.signingKey >/dev/null \
+		|| die "Git user.signingKey not set"
+	local -r push="${1}"
+	local -r short_hash=$(git rev-parse --short HEAD)
+	local -r signing_fp=$( \
+		git config --get user.signingKey \
+			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
+	)
+	local -r name="sig-${short_hash}-${signing_fp}"
+	git tag -fsm "$name" "$name"
+	[[ $push -eq 1 ]] && git push --tags
+}
+
+
 
 ## Public Commands
 
@@ -453,35 +491,6 @@ cmd_fetch() {
        		--recv-keys "${fingerprint}" \
        	&& break
     done
-}
-
-sign_detached(){
-	cmd_manifest
-	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
-	local -r fp=$( \
-		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
-			| grep "issuer key ID" \
-			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
-	)
-	mv ."${PROGRAM}"/manifest.{"txt.asc","${fp}.asc"}
-}
-
-sign_tag(){
-	[ -d '.git' ] \
-		|| die "Not a git repository"
-	command -v git >/dev/null \
-		|| die "Git not installed"
-	git config --get user.signingKey >/dev/null \
-		|| die "Git user.signingKey not set"
-	local -r push="${1}"
-	local -r short_hash=$(git rev-parse --short HEAD)
-	local -r signing_fp=$( \
-		git config --get user.signingKey \
-			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
-	)
-	local -r name="sig-${short_hash}-${signing_fp}"
-	git tag -fsm "$name" "$name"
-	[[ $push -eq 1 ]] && git push --tags
 }
 
 cmd_add(){
