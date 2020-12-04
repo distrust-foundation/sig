@@ -81,13 +81,10 @@ load test_helper
 	git add .
 	git commit -m "user1 commit"
 	set_identity "user2"
-	echo "test string 2" > somefile2
-	git add .
-	git commit -m "user2 commit"
+	git log
+	sig add
 	set_identity "user3"
-	echo "test string 3" > somefile3
-	git add .
-	git commit -m "user3 commit"
+	sig add
 	run sig verify --method git --threshold 3
 	[ "$status" -eq 0 ]
 }
@@ -120,15 +117,9 @@ load test_helper
 	git add .
 	git commit -m "User 1 Commit"
 	set_identity "user2"
-	echo "test string" > somefile2
-	git init
-	git add .
-	git commit -m "User 2 Commit"
+	sig add
 	set_identity "user3"
-	echo "test string" > somefile3
-	git init
-	git add .
-	git commit -m "User 3 Commit"
+	sig add
 	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
 	sig fetch --group maintainers BE4D60F6CFD2237A8AF978583C51CADD33BD0EE8
 	sig fetch --group maintainers 3E45AC9E190B4EE32BAE9F61A331AFB540761D69
@@ -203,23 +194,19 @@ load test_helper
 
 	set_identity "user1"
 	echo "test string" > testfile
-	sig add
 	git add .
 	git commit -m "User 1 Commit"
 
 	set_identity "user2"
 	sig add
-	git add .
-	git commit -m "User 2 Commit"
 
 	set_identity "user1"
 	git checkout -b feature_branch
 	echo "updated test string" > somefile1
-	sig add
 	git add .
 	git commit -m "User 1 Update Commit"
 
-	run sig verify --diff master --method detached --threshold 2
+	run sig verify --diff master --threshold 2
 	[ "$status" -eq 1 ]
 	echo "${output}" | grep "updated test string"
 }

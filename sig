@@ -273,7 +273,7 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local -r threshold="${1}"
 	local -r group="${2}"
-	local seen_fps="" sig_count=0 depth=0 ref commit fp uid
+	local seen_fps="" sig_count=0 ref commit fp uid
 
 	git verify-commit HEAD >/dev/null 2>&1 \
 		|| die "HEAD commit not signed"
@@ -287,12 +287,11 @@ verify_git(){
 	for tag in $(git tag --points-at HEAD); do
 		git tag --verify "$tag" >/dev/null 2>&1 && {
 			fp=$( \
-				git verify-tag --raw extra-sig 2>&1 \
+				git verify-tag --raw "$tag" 2>&1 \
 					| grep VALIDSIG \
 					| sed 's/.*VALIDSIG \([A-Z0-9]\+\).*/\1/g' \
 			)
 			uid=$( get_uid "${fp}" )
-			seen_fps="${seen_fps} ${fp}"
 			if [[ "${seen_fps}" != *"${fp}"* ]]; then
 				seen_fps="${seen_fps} ${fp}"
 				echo "Verified signed git tag by \"${uid}\""
@@ -307,8 +306,8 @@ verify_git(){
 	}
 
 	if [ ! -z "$group" ]; then
-		for fp in "${seen_fps}"; do
-			group_check_fp "${fp}" "${group}" || {
+		for seen_fp in ${seen_fps}; do
+			group_check_fp "${seen_fp}" "${group}" || {
 				echo "Git signing key not in group \"${group}\": ${fp}";
 				return 1;
 			}
@@ -318,15 +317,13 @@ verify_git(){
 
 ## Get temporary dir reliably across different mktemp implementations
 get_temp(){
-	echo "$(
-		mktemp \
-			--quiet \
-			--directory \
-			-t "$(basename "$0").XXXXXX" 2>/dev/null \
-		|| mktemp \
-			--quiet \
-			--directory
-	)"
+	mktemp \
+		--quiet \
+		--directory \
+		-t "$(basename "$0").XXXXXX" 2>/dev/null \
+	|| mktemp \
+		--quiet \
+		--directory
 }
 
 
@@ -343,7 +340,6 @@ verify_git_diff(){
 	local -r temp_repo=$(get_temp)
 	local -r git_root=$(git rev-parse --show-toplevel)
 	local -r curr_ref=$(git rev-parse HEAD)
-	set -x
 	cp -a "${git_root}/." "${temp_repo}/"
 	cd "${temp_repo}"
 	git reset --hard "${diff_ref}" >/dev/null 2>&1
@@ -352,7 +348,6 @@ verify_git_diff(){
 	else
 		echo "Verification of specifed diff ref failed: ${ref}"
 	fi
-	set +x
 }
 
 ## Verify current folder/repo with specified signing rules
@@ -406,14 +401,14 @@ sign_tag(){
 	git config --get user.signingKey >/dev/null \
 		|| die "Git user.signingKey not set"
 	local -r push="${1}"
-	local -r short_hash=$(git rev-parse --short HEAD)
-	local -r signing_fp=$( \
+	local -r commit=$(git rev-parse --short HEAD)
+	local -r fp=$( \
 		git config --get user.signingKey \
 			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
 	)
-	local -r name="sig-${short_hash}-${signing_fp}"
+	local -r name="sig-${commit}-${fp}"
 	git tag -fsm "$name" "$name"
-	[[ $push -eq 1 ]] && git push --tags
+	[[ $push -eq 0 ]] || git push --tags
 }
 
 
@@ -430,7 +425,6 @@ cmd_manifest() {
 
 cmd_verify() {
 	local opts threshold=1 group="" method="" diff=""
-	local -r args="$@"
 	opts="$(getopt -o t:g:m:d: -l threshold:,group:,method:,diff: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
@@ -495,7 +489,6 @@ cmd_fetch() {
 
 cmd_add(){
 	local opts method="default" push=0
-	local -r args="$@"
 	opts="$(getopt -o m:p:: -l method:push:: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
@@ -513,8 +506,7 @@ cmd_add(){
 			;;
 		detached) sign_detached ;;
 		git) sign_tag "$push" ;;
-		*) cmd_help ;;
-		--) shift; break ;;
+		*) cmd_usage ;;
 	esac
 }
 

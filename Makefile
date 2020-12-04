@@ -49,4 +49,4 @@ test-shell: test-image
 		--interactive \
 		--volume $(PWD)/:/home/test/sig \
 		local/sig-test \
-		bash
+		bash --init-file /home/test/sig/test/test_shell.bash
