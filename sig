@@ -290,7 +290,7 @@ verify_git(){
 			git_fp=$( \
 				git verify-tag --raw "$tag" 2>&1 \
 					| grep VALIDSIG \
-					| sed 's/.*VALIDSIG \([A-Z0-9]\+\).*/\1/g' \
+					| awk '{print $3}' \
 			)
 			fp=$(get_primary_fp "$git_fp")
 			uid=$( get_uid "${fp}" )
@@ -497,7 +497,7 @@ cmd_fetch() {
 }
 
 cmd_add(){
-	local opts method="default" push=0
+	local opts method="" push=0
 	opts="$(getopt -o m:p:: -l method:push:: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
@@ -506,16 +506,16 @@ cmd_add(){
 		--) shift; break ;;
 	esac done
 	case $method in
-		default)
+		detached) sign_detached ;;
+		git) sign_tag "$push" ;;
+		*)
+			[ ! -z "$push" ] || cmd_usage
 			if [ -d '.git' ]; then
 				sign_tag "$push"
 			else
 				sign_detached
 			fi
-			;;
-		detached) sign_detached ;;
-		git) sign_tag "$push" ;;
-		*) cmd_usage ;;
+		;;
 	esac
 }
 
