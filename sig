@@ -273,12 +273,13 @@ verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local -r threshold="${1}"
 	local -r group="${2}"
-	local seen_fps="" sig_count=0 ref commit fp uid
+	local seen_fps="" sig_count=0 ref commit git_fp fp uid
 
 	git verify-commit HEAD >/dev/null 2>&1 \
 		|| die "HEAD commit not signed"
 
-	fp=$(git log --format="%GP" HEAD -n1 )
+	git_fp=$(git log --format="%GP" HEAD -n1 )
+	fp=$(get_primary_fp "$git_fp")
 	seen_fps="${fp}"
 	sig_count=1
 	uid=$( get_uid "${fp}" )
@@ -286,11 +287,12 @@ verify_git(){
 
 	for tag in $(git tag --points-at HEAD); do
 		git tag --verify "$tag" >/dev/null 2>&1 && {
-			fp=$( \
+			git_fp=$( \
 				git verify-tag --raw "$tag" 2>&1 \
 					| grep VALIDSIG \
 					| sed 's/.*VALIDSIG \([A-Z0-9]\+\).*/\1/g' \
 			)
+			fp=$(get_primary_fp "$git_fp")
 			uid=$( get_uid "${fp}" )
 			if [[ "${seen_fps}" != *"${fp}"* ]]; then
 				seen_fps="${seen_fps} ${fp}"
@@ -313,6 +315,11 @@ verify_git(){
 			}
 		done
 	fi
+
+	if [[ $(git diff --stat) != '' ]]; then
+		die "Error: git tree is dirty"
+	fi
+
 }
 
 ## Get temporary dir reliably across different mktemp implementations
@@ -359,7 +366,9 @@ verify(){
 	if [ -z "$method" ] || [ "$method" == "git" ]; then
 		if [ "$method" == "git" ]; then
 			command -v git >/dev/null 2>&1 \
-			|| die "Error: method 'git' specified and git is not installed"
+				|| die "Error: method 'git' specified and git is not installed"
+			[ -d .git ] \
+				|| die "Error: This folder is not a git repository"
 		fi
 		if command -v git >/dev/null 2>&1 \
 			&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 );
