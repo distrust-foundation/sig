@@ -64,6 +64,22 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
+@test "Verify fails if git is in use and tree is dirty" {
+	set_identity "user1"
+	echo "test string" > somefile
+	git init
+	git add .
+	git commit -m "initial commit"
+	echo "dirty" > somefile
+	run sig verify --method="git"
+	[ "$status" -eq 1 ]
+}
+
+@test "Exit 1 if git method requested but not a repo" {
+	run sig verify --method="git"
+	[ "$status" -eq 1 ]
+}
+
 @test "Verify succeeds when 1 unique git sig requirement is satisifed" {
 	set_identity "user1"
 	echo "test string" > somefile
@@ -95,6 +111,7 @@ load test_helper
 	echo "test string 1" > somefile1
 	git add .
 	git commit -m "user1 commit"
+	sig add
 	run sig verify --method git --threshold 2
 	[ "$status" -eq 1 ]
 }
