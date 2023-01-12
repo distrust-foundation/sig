@@ -378,13 +378,20 @@ verify(){
 	fi
 
 	if [ -z "$method" ] || [ "$method" == "detached" ]; then
-		( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 ) || {
-			echo "Error: No signatures";
-			return 1;
-		}
-		cmd_manifest || return 1
-		verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt \
-			|| return 1
+	    if [ "$method" == "detached" ]; then
+		    ( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 \
+            ) || {
+				echo "Error: method 'detached' and no signatures found";
+				return 1;
+		    }
+        fi
+		if ( \
+            [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 \
+        ); then
+		    cmd_manifest || return 1;
+		    verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt \
+			|| return 1;
+        fi
 	fi
 }
 
@@ -497,8 +504,8 @@ cmd_fetch() {
 }
 
 cmd_add(){
-	local opts method="" push=0
-	opts="$(getopt -o m:p:: -l method:push:: -n "$PROGRAM" -- "$@")"
+	local opts method="" push="0"
+	opts="$(getopt -o m:p:: -l method:,push:: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
 		-m|--method) method="$2"; shift 2 ;;
@@ -521,13 +528,13 @@ cmd_add(){
 
 cmd_version() {
 	cat <<-_EOF
-	==========================================
-	=  sig: simple multisig trust toolchain  =
-	=                                        =
-	=                  v0.0.1                =
-	=                                        =
-	=     https://gitlab.com/pchq/sig        =
-	==========================================
+	==============================================
+	=  sig: simple multisig trust toolchain      =
+	=                                            =
+	=                  v0.0.1                    =
+	=                                            =
+	= https://github.com/distrust-foundation/sig =
+	==============================================
 	_EOF
 }
 
