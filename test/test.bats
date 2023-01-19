@@ -127,6 +127,26 @@ load test_helper
 	[ "$status" -eq 1 ]
 }
 
+@test "Verify succeeds on past commit ref" {
+	git init
+
+	set_identity "user1"
+	echo "test string" > testfile
+	git add .
+	git commit -m "User 1 Commit"
+
+	set_identity "user2"
+	sig add
+
+	set_identity "user1"
+	echo "updated test string" > somefile1
+	git add .
+	git commit -m "User 1 Update Commit"
+
+	run sig verify --threshold 2 --ref HEAD~1
+	[ "$status" -eq 0 ]
+}
+
 @test "Verify diff shows changes between feature branch and verified master" {
 	git init
 
@@ -144,7 +164,7 @@ load test_helper
 	git add .
 	git commit -m "User 1 Update Commit"
 
-	run sig verify --diff master --threshold 2
-	[ "$status" -eq 1 ]
+	run sig verify --diff --ref master --threshold 2
+	[ "$status" -eq 0 ]
 	echo "${output}" | grep "updated test string"
 }

@@ -114,23 +114,6 @@ check_tools(){
 	done
 }
 
-### Get files that will be added to the manifest for signing
-### Use git if available, else fall back to find
-get_files(){
-	if [ -d '.git' ] && command -v git >/dev/null; then
-		git ls-files \
-			--cached \
-			--others \
-			--exclude-standard \
-		| grep -v ".${PROGRAM}"
-	else
-		find . \
-			-type f \
-			-not -path "./.git/*" \
-			-not -path "./.${PROGRAM}/*"
-	fi
-}
-
 ### Get primary UID for a given fingerprint
 get_uid(){
 	local -r fp="${1?}"
@@ -226,12 +209,20 @@ group_check_fp(){
 }
 
 tree_hash() {
+	local -r ref="${1:-HEAD}"
+	local -r target=$(git rev-parse ${ref})
+	local -r current=$(git rev-parse HEAD)
+	[ "$target" == "$current" ] || git checkout ${target} >/dev/null 2>&1
 	mkdir -p ".${PROGRAM}"
-	printf "%s" "$(get_files | xargs openssl sha256 -r)" \
+	printf "%s" "$( \
+			find . -type f -not -path "./.git/*" \
+			| xargs openssl sha256 -r \
+		)" \
 		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
 		| LC_ALL=C sort -k2 \
 		| openssl sha256 -r \
 		| sed -e 's/ .*//g'
+	[ "$target" == "$current" ] || git checkout ${current} >/dev/null 2>&1
 }
 
 sig_generate(){
@@ -253,6 +244,7 @@ sig_generate(){
 
 parse_gpg_status() {
 	local -r gpg_status="$1"
+	local -r error="$2"
 	while read -r values; do
 		local key array sip_fp sig_date sig_status sig_author sig_body
 		IFS=" " read -r -a array <<< "$values"
@@ -282,13 +274,15 @@ parse_gpg_status() {
 		esac
 	done <<< "$gpg_status"
 	sig_fp=$(get_primary_fp $sig_fp)
-	sig_body="pgp:$sig_fp:$sig_status:$sig_trust:$sig_date:$sig_author"
+	sig_body="pgp:$sig_fp:$sig_status:$sig_trust:$sig_date:$sig_author:$error"
 	printf "$sig_body"
 
 }
 
 verify_git_note(){
 	local -r line="${1}"
+	local -r ref="${2:-HEAD}"
+	local -r commit=$(git rev-parse ${ref})
 	IFS=':' line_parts=($line)
 	local -r identifier=${line_parts[0]}
 	local -r version=${line_parts[1]}
@@ -298,15 +292,11 @@ verify_git_note(){
 	local -r sig_type=${line_parts[5]}
 	local -r sig=${line_parts[6]}
 	local -r body="sig:$version:$vcs_hash:$tree_hash:$review_hash:$sig_type"
-	local sig_status="unknown"
+	local error="" commit_tree_hash
 	[[ "$identifier" == "sig" \
 		&& "$version" == "v0" \
 		&& "$sig_type" == "pgp" \
 	]] || {
-		return 1;
-	}
-	[[ "$tree_hash" == "$(tree_hash)" ]] || {
-		echo "Actual tree hash differs from signature.";
 		return 1;
 	}
 	gpg_sig_raw="$(
@@ -314,22 +304,31 @@ verify_git_note(){
 		<(printf '%s' "$sig" | openssl base64 -d -A) \
 		<(printf '%s' "$body") 2>/dev/null \
 	)"
-	parse_gpg_status "$gpg_sig_raw"
+	[[ "$vcs_hash" == "$commit" ]] || {
+		error="COMMIT_NOMATCH"
+	}
+	commit_tree_hash="$(tree_hash ${commit})"
+	[[ "$tree_hash" == "$commit_tree_hash" ]] || {
+		error="TREEHASH_NOMATCH;$commit;$tree_hash;$commit_tree_hash";
+	}
+	parse_gpg_status "$gpg_sig_raw" "$error"
 }
 
 verify_git_notes(){
-	local -r commit=$(git rev-parse --short HEAD)
+	local -r ref="${1:-HEAD}"
+	local -r commit=$(git rev-parse ${ref})
 	local code=1
 	while IFS='' read -r line; do
-		printf "$(verify_git_note "$line")\n"
+		printf "$(verify_git_note "$line" "$ref")\n"
 		code=0
 	done < <(git notes --ref signatures show "$commit" 2>&1 | grep "^sig:")
 	return $code
 }
 
 verify_git_commit(){
+	local -r ref="${1:-HEAD}"
 	local gpg_sig_raw
-	gpg_sig_raw=$(git verify-commit HEAD --raw 2>&1)
+	gpg_sig_raw=$(git verify-commit ${ref} --raw 2>&1)
 	parse_gpg_status "$gpg_sig_raw"
 }
 
@@ -348,18 +347,19 @@ verify_git_tags(){
 ### Verify head commit is signed
 ### Optionally verify total unique commit/tag/note signatures meet a threshold
 ### Optionally verify all signatures belong to keys in gpg alias group
-verify_git(){
-	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
+verify(){
+	[ $# -eq 3 ] || die "Usage: verify <threshold> <group> <ref>"
 	local -r threshold="${1}"
 	local -r group="${2}"
+	local -r ref=${3:-HEAD}
 	local sig_count=0 seen_fps="" fp="" tag_fps="" note_fps=""
+	[ -d .git ] \
+		|| die "Error: This folder is not a git repository"
     if [[ $(git diff --stat) != '' ]]; then
 		die "Error: git tree is dirty"
 	fi
-	git verify-commit HEAD >/dev/null 2>&1 \
-		|| die "Error: HEAD commit is not signed"
 
-	commit_sig=$(verify_git_commit)
+	commit_sig=$(verify_git_commit "$ref")
 	if [ -n "$commit_sig" ]; then
 		IFS=':' read -r -a sig <<< "$commit_sig"
 		fp="${sig[1]}"
@@ -368,7 +368,7 @@ verify_git(){
 		seen_fps="${fp}"
 	fi
 
-	tag_sigs=$(verify_git_tags)
+	tag_sigs=$(verify_git_tags "$ref")
 	[[ $? == 0 ]] && while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
@@ -379,12 +379,17 @@ verify_git(){
 		fi
 	done <<< "$tag_sigs"
 
-	note_sigs=$(verify_git_notes)
+	note_sigs=$(verify_git_notes "$ref")
 	[[ $? == 0 ]] && while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
-		echo "Verified signed git note by \"${uid}\""
+		error="${sig[6]}"
+		[ "$error" == "" ] || {
+			echo "Error: $error";
+			return 1;
+		}
+		echo "Verified signed git note commit by \"${uid}\""
 		if [[ "${seen_fps}" != *"${fp}"* ]]; then
 			seen_fps+=" ${fp}"
 		fi
@@ -415,39 +420,6 @@ get_temp(){
 	|| mktemp \
 		--quiet \
 		--directory
-}
-
-## Verify specified branch and show diff between that and current HEAD
-verify_git_diff(){
-	[ $# -eq 4 ] \
-		|| die "Usage: verify_git_diff <ref> <threshold> <group> <method>"
-	command -v git >/dev/null 2>&1 \
-		|| die "Error: verify diff requires 'git' which is not installed"
-	local -r diff_ref=${1}
-	local -r threshold=${2}
-	local -r group=${3}
-	local -r method=${4}
-	local -r temp_repo=$(get_temp)
-	local -r git_root=$(git rev-parse --show-toplevel)
-	local -r curr_ref=$(git rev-parse HEAD)
-	cp -a "${git_root}/." "${temp_repo}/"
-	cd "${temp_repo}"
-	git reset --hard "${diff_ref}" >/dev/null 2>&1
-	if verify "${threshold}" "${group}" "${method}"; then
-		git --no-pager diff "${diff_ref}" "${curr_ref}"
-	else
-		echo "Verification of specified diff ref failed: ${ref}"
-	fi
-}
-
-## Verify current folder/repo with specified signing rules
-verify(){
-	[ $# -eq 3 ] || die "Usage: verify <threshold> <group>"
-	local -r threshold=${1}
-	local -r group=${2}
-	[ -d .git ] \
-		|| die "Error: This folder is not a git repository"
-	verify_git "${threshold}" "${group}" || return 1
 }
 
 ## Add signed tag pointing at this commit.
@@ -494,32 +466,24 @@ sign_note() {
 
 ## Public Commands
 
-cmd_manifest() {
-	mkdir -p ".${PROGRAM}"
-	printf "%s" "$(get_files | xargs openssl sha256 -r)" \
-		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
-		| LC_ALL=C sort -k2 \
-		> ".${PROGRAM}/manifest.txt"
-}
-
 cmd_verify() {
 	local opts threshold=1 group="" method="" diff=""
-	opts="$(getopt -o t:g:m:d: -l threshold:,group:,method:,diff: -n "$PROGRAM" -- "$@")"
+	opts="$(getopt -o t:g:m:d:: -l threshold:,group:,ref:,diff:: -n "$PROGRAM" -- "$@")"
 	eval set -- "$opts"
 	while true; do case $1 in
 		-t|--threshold) threshold="$2"; shift 2 ;;
 		-g|--group) group="$2"; shift 2 ;;
-		-m|--method) method="$2"; shift 2 ;;
-		-d|--diff) diff="$2"; shift 2 ;;
+		-r|--ref) ref="$2"; shift 2 ;;
+		-d|--diff) diff="1"; shift 2 ;;
 		--) shift; break ;;
 	esac done
 
-	if verify "$threshold" "$group" "$method"; then
+	local -r head=$(git rev-parse --short HEAD)
+	if verify "$threshold" "$group" "$ref"; then
+		if [ ! -z "$diff" ] && [ ! -z "$ref" ] && [ "${ref}" != "${head}" ]; then
+			git --no-pager diff "${ref}" "${head}"
+		fi
 		return 0
-	elif [ ! -z "$diff" ]; then
-		echo "Verification failed."
-		echo "Attempting verified diff against git ref ${diff} ..."
-		verify_git_diff "$diff" "$threshold" "$group" "$method"
 	fi
 	return 1
 }
@@ -625,7 +589,6 @@ readonly PROGRAM="${0##*/}"
 case "$1" in
 	verify)            shift; cmd_verify   "$@" ;;
 	add)               shift; cmd_add      "$@" ;;
-	manifest)          shift; cmd_manifest "$@" ;;
 	fetch)             shift; cmd_fetch    "$@" ;;
 	push)              shift; cmd_push    "$@" ;;
 	version|--version) shift; cmd_version  "$@" ;;
