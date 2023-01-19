@@ -168,3 +168,36 @@ load test_helper
 	[ "$status" -eq 0 ]
 	echo "${output}" | grep "updated test string"
 }
+
+@test "Verify diff can automatically discover most recent valid commit" {
+	git init
+
+	set_identity "user1"
+	echo "test string" > testfile
+	git add .
+	git commit -m "User 1 Commit 1"
+
+	set_identity "user2"
+	sig add
+
+    set_identity "user3"
+	sig add
+
+	set_identity "user1"
+	echo "test string 2" > testfile
+	git add .
+	git commit -m "User 1 Commit 2"
+
+	set_identity "user2"
+	sig add
+
+	set_identity "user1"
+	git checkout -b feature_branch
+	echo "updated test string" > somefile1
+	git add .
+	git commit -m "User 1 Commit 3"
+
+	run sig verify --diff --threshold 3
+	[ "$status" -eq 0 ]
+	echo "${output}" | grep "updated test string"
+}

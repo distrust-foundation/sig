@@ -479,11 +479,25 @@ cmd_verify() {
 	esac done
 
 	local -r head=$(git rev-parse --short HEAD)
-	if verify "$threshold" "$group" "$ref"; then
-		if [ ! -z "$diff" ] && [ ! -z "$ref" ] && [ "${ref}" != "${head}" ]; then
-			git --no-pager diff "${ref}" "${head}"
+	if [ ! -z "$diff" ] && [ -z "$ref" ]; then
+		echo "automode"
+		while read -r commit; do
+			echo "Checking commit: $commit"
+			if verify "$threshold" "$group" "$commit"; then
+				git --no-pager diff "${commit}" "${head}"
+				return 0
+			fi
+		done <<< "$(git log --show-notes=signatures --pretty=format:"%H")"
+	else
+		echo "single"
+		if verify "$threshold" "$group" "$ref"; then
+			if [ ! -z "$diff" ] && [ ! -z "$ref" ]; then
+				local -r commit=$(git rev-parse --short "${ref}")
+				[ "${commit}" != "${head}" ] && \
+					git --no-pager diff "${commit}" "${head}"
+			fi
+			return 0
 		fi
-		return 0
 	fi
 	return 1
 }
