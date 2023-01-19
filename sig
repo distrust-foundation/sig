@@ -480,7 +480,6 @@ cmd_verify() {
 
 	local -r head=$(git rev-parse --short HEAD)
 	if [ ! -z "$diff" ] && [ -z "$ref" ]; then
-		echo "automode"
 		while read -r commit; do
 			echo "Checking commit: $commit"
 			if verify "$threshold" "$group" "$commit"; then
@@ -489,7 +488,6 @@ cmd_verify() {
 			fi
 		done <<< "$(git log --show-notes=signatures --pretty=format:"%H")"
 	else
-		echo "single"
 		if verify "$threshold" "$group" "$ref"; then
 			if [ ! -z "$diff" ] && [ ! -z "$ref" ]; then
 				local -r commit=$(git rev-parse --short "${ref}")
