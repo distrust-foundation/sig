@@ -21,30 +21,20 @@ The simple GPG signature toolchain for directories or git repos.
       git clone git@gitlab.com/pchq/sig.git sig
       ```
 
-  2. Manually generate manifest
+  2. Review source code and signatures manually
 
-      ```
-      git ls-files \
-      | grep -v .sig \
-      | xargs openssl sha256 -r \
-      | sed -e 's/ \*/ /g' -e 's/ \.\// /g'
-      ```
+      Using sig to verify the signatures of sig itself is not recommended.
 
-  3. Manually verify manifest
-
+      Consider using the following one liner which is much faster to review:
       ```
-      for file in .sig/*.asc; do gpg --verify $file .sig/manifest.txt; done
-      git log --show-signature
-      less sig
+      while read -r line; do \
+        gpg --verify \
+          <(printf $line | sed 's/.*pgp://g'| openssl base64 -d -A) \
+          <(printf $line | sed 's/pgp:.*/pgp/g'); \
+      done < <(git notes --ref=signatures show)
       ```
 
-  4. Self verify
-
-      ```
-      ./sig verify --threshold 3
-      ```
-
-  5. Copy to $PATH
+  3. Copy to $PATH
 
       ```
       cp sig ~/.local/bin/
@@ -52,12 +42,10 @@ The simple GPG signature toolchain for directories or git repos.
 
 ## Usage
 
-* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ] [-d,--diff=<branch>]
-  * Verify m-of-n signatures by given group are present for directory
+* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-r,--ref=<ref> ] [-d,--diff=<branch>]
+  * Verify m-of-n signatures by given group are present for a git repo or ref
 * sig add
-  * Add signature to manifest for this directory
-* sig manifest
-  * Generate hash manifest for this directory
+  * Add signature to this git ref
 * sig fetch [-g,--group=<group>]
   * Fetch key by fingerprint. Optionally add to group.
 * sig help
@@ -75,53 +63,33 @@ keys.
 This counts the commit signature, and any number of signed tags pointing at
 this ref.
 
-### Detached
-
-This method verifies the state of this folder was signed exactly as-is by one
-or more authors.
-
-## Behavior
-
-If 'threshold' is specified, then that number of signatures must be present.
-
-If 'group' is specified, all signatures must be by keys that belong to a
-defined gpg alias group.
-
 ### Assumptions
-  - Single sig mode: Folder contents controlled by signer
-  - Multi-sig mode: Folder contents verified by multiple signers
-  - Multi-sig group mode: Folder contents approved by specified individuals
-  - Hashing scheme for respective backend is not broken
-    - Git: sha1
-    - Detached: sha256
+  - Single sig mode: Repo contents controlled by signer
+  - Multi-sig mode: Repo contents verified by multiple signers
+  - Multi-sig group mode: Repo contents approved by specified individuals
+  - Hashing scheme for respective backend is not broken: (sha256)
 
 ## Examples
 
-#### Verify 1 signature via Detached and Git methods
+#### Verify at least one signature is present with a known key
 
 ```
 sig verify
 ```
 
-#### Verify 2 unique signatures via Detached and Git methods
+#### Verify 2 unique signatures from known keys
 
 ```
 sig verify --threshold 2
 ```
 
-#### Verify 3 unique signatures from specified signing group via Git method
+#### Verify 3 unique signatures from specified signing group
 
 ```
-sig verify --threshold 3 --group myteam --method git
+sig verify --threshold 3 --group myteam
 ```
 
-#### Verify 2 unique signatures via detached method and diff on failure
-
-```
-sig verify --threshold 2 --diff master --method detached
-```
-
-#### Add Detached Signature
+#### Add signature
 
 ```
 sig add
