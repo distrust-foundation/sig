@@ -5,6 +5,7 @@ readonly MIN_BASH_VERSION=5
 readonly MIN_GPG_VERSION=2.2
 readonly MIN_OPENSSL_VERSION=1.1
 readonly MIN_GETOPT_VERSION=2.33
+readonly DATE=$(command -v gdate || command -v date)
 
 ## Private Functions
 
@@ -224,102 +225,185 @@ group_check_fp(){
 	fi
 }
 
+tree_hash() {
+	mkdir -p ".${PROGRAM}"
+	printf "%s" "$(get_files | xargs openssl sha256 -r)" \
+		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
+		| LC_ALL=C sort -k2 \
+		| openssl sha256 -r \
+		| sed -e 's/ .*//g'
+}
 
-### Verify a file has 0-N unique valid detached signatures
-### Optionally verify all signatures belong to keys in gpg alias group
-verify_detached() {
-	[ $# -eq 3 ] || die "Usage: verify_detached <threshold> <group> <file>"
-	local -r threshold="${1}"
-	local -r group="${2}"
-	local -r filename="${3}"
-	local fp uid sig_count=0 seen_fps=""
+sig_generate(){
+	local -r vcs_ref="$1"
+	local -r review_hash="${2:-null}"
+	local -r version="v0"
+	local -r sig_type="pgp"
+	local -r tree_hash="$(tree_hash)"
+	local -r body="sig:$version:$vcs_ref:$tree_hash:$review_hash:$sig_type"
+	local -r signature=$(\
+		printf "%s" "$body" \
+		| gpg \
+			--detach-sign \
+			--local-user "$key" \
+		| openssl base64 -A \
+	)
+	printf "$body:$signature"
+}
 
-	for sig_filename in "${filename%.*}".*.asc; do
-		gpg --verify "${sig_filename}" "${filename}" >/dev/null 2>&1 || {
-			echo "Invalid detached signature: ${sig_filename}";
-			return 1;
-		}
-		file_fp=$( get_file_fp "${sig_filename}" )
-		fp=$( get_primary_fp "${file_fp}" )
-		uid=$( get_uid "${fp}" )
+parse_gpg_status() {
+	local -r gpg_status="$1"
+	while read -r values; do
+		local key array sip_fp sig_date sig_status sig_author sig_body
+		IFS=" " read -r -a array <<< "$values"
+		key=${array[1]}
+		case $key in
+			"BADSIG"|"ERRSIG"|"EXPSIG"|"EXPKEYSIG"|"REVKEYSIG")
+				sig_fp="${array[2]}"
+				sig_status="$key"
+			;;
+			"GOODSIG")
+				sig_author="${values:34}"
+				sig_fp="${array[2]}"
+			;;
+			"VALIDSIG")
+				sig_status="$key"
+				sig_date="${array[4]}"
+			;;
+			"SIG_ID")
+				sig_date="${array[4]}"
+			;;
+			"NEWSIG")
+				sig_author="${sig_author:-Unknown User <${array[2]}>}"
+			;;
+			TRUST_*)
+				sig_trust="${key//TRUST_/}"
+			;;
+		esac
+	done <<< "$gpg_status"
+	sig_fp=$(get_primary_fp $sig_fp)
+	sig_body="pgp:$sig_fp:$sig_status:$sig_trust:$sig_date:$sig_author"
+	printf "$sig_body"
 
-		[[ "${seen_fps}" == *"${fp}"* ]] && {
-			echo "Duplicate signature: ${sig_filename}";
-			return 1;
-		}
+}
 
-		echo "Verified detached signature by \"${uid}\""
-
-		if [ ! -z "${group}" ]; then
-			group_check_fp "${fp}" "${group}" || {
-				echo "Detached signing key not in group \"${group}\": ${fp}";
-				return 1;
-			}
-		fi
-
-		seen_fps="${seen_fps} ${fp}"
-		((sig_count=sig_count+1))
-	done
-	[[ "${sig_count}" -ge "${threshold}" ]] || {
-		echo "Minimum detached signatures not found: ${sig_count}/${threshold}";
+verify_git_note(){
+	local -r line="${1}"
+	IFS=':' line_parts=($line)
+	local -r identifier=${line_parts[0]}
+	local -r version=${line_parts[1]}
+	local -r vcs_hash=${line_parts[2]}
+	local -r tree_hash=${line_parts[3]}
+	local -r review_hash=${line_parts[4]:-null}
+	local -r sig_type=${line_parts[5]}
+	local -r sig=${line_parts[6]}
+	local -r body="sig:$version:$vcs_hash:$tree_hash:$review_hash:$sig_type"
+	local sig_status="unknown"
+	[[ "$identifier" == "sig" \
+		&& "$version" == "v0" \
+		&& "$sig_type" == "pgp" \
+	]] || {
 		return 1;
 	}
+	[[ "$tree_hash" == "$(tree_hash)" ]] || {
+		echo "Actual tree hash differs from signature.";
+		return 1;
+	}
+	gpg_sig_raw="$(
+		gpg --verify --status-fd=1 \
+		<(printf '%s' "$sig" | openssl base64 -d -A) \
+		<(printf '%s' "$body") 2>/dev/null \
+	)"
+	parse_gpg_status "$gpg_sig_raw"
+}
+
+verify_git_notes(){
+	local -r commit=$(git rev-parse --short HEAD)
+	local code=1
+	while IFS='' read -r line; do
+		printf "$(verify_git_note "$line")\n"
+		code=0
+	done < <(git notes --ref signatures show "$commit" 2>&1 | grep "^sig:")
+	return $code
+}
+
+verify_git_commit(){
+	local gpg_sig_raw
+	gpg_sig_raw=$(git verify-commit HEAD --raw 2>&1)
+	parse_gpg_status "$gpg_sig_raw"
+}
+
+verify_git_tags(){
+	local fps="" git_sig_raw code=1
+	for tag in $(git tag --points-at HEAD); do
+		git tag --verify "$tag" >/dev/null 2>&1 && {
+			gpg_sig_raw=$( git verify-tag --raw "$tag" 2>&1 )
+			printf "$(parse_gpg_status "$gpg_sig_raw")\n"
+			code=0
+		}
+	done
+	return $code
 }
 
 ### Verify head commit is signed
-### Optionally verify unique signed git tags to meet a threshold
+### Optionally verify total unique commit/tag/note signatures meet a threshold
 ### Optionally verify all signatures belong to keys in gpg alias group
 verify_git(){
 	[ $# -eq 2 ] || die "Usage: verify_git <threshold> <group>"
 	local -r threshold="${1}"
 	local -r group="${2}"
-	local seen_fps="" sig_count=0 ref commit git_fp fp uid
-
+	local sig_count=0 seen_fps="" fp="" tag_fps="" note_fps=""
+    if [[ $(git diff --stat) != '' ]]; then
+		die "Error: git tree is dirty"
+	fi
 	git verify-commit HEAD >/dev/null 2>&1 \
-		|| die "HEAD commit not signed"
+		|| die "Error: HEAD commit is not signed"
 
-	git_fp=$(git log --format="%GP" HEAD -n1 )
-	fp=$(get_primary_fp "$git_fp")
-	seen_fps="${fp}"
-	sig_count=1
-	uid=$( get_uid "${fp}" )
-	echo "Verified signed git commit by \"${uid}\""
+	commit_sig=$(verify_git_commit)
+	if [ -n "$commit_sig" ]; then
+		IFS=':' read -r -a sig <<< "$commit_sig"
+		fp="${sig[1]}"
+		uid="${sig[5]}"
+		echo "Verified signed git commit by \"${uid}\""
+		seen_fps="${fp}"
+	fi
 
-	for tag in $(git tag --points-at HEAD); do
-		git tag --verify "$tag" >/dev/null 2>&1 && {
-			git_fp=$( \
-				git verify-tag --raw "$tag" 2>&1 \
-					| grep VALIDSIG \
-					| awk '{print $3}' \
-			)
-			fp=$(get_primary_fp "$git_fp")
-			uid=$( get_uid "${fp}" )
-			if [[ "${seen_fps}" != *"${fp}"* ]]; then
-				seen_fps="${seen_fps} ${fp}"
-				echo "Verified signed git tag by \"${uid}\""
-				((sig_count=sig_count+1))
-			fi
-		}
-	done
+	tag_sigs=$(verify_git_tags)
+	[[ $? == 0 ]] && while IFS= read -r line; do
+		IFS=':' read -r -a sig <<< "$line"
+		fp="${sig[1]}"
+		uid="${sig[5]}"
+		echo "Verified signed git tag by \"${uid}\""
+		if [[ "${seen_fps}" != *"${fp}"* ]]; then
+			seen_fps+=" ${fp}"
+		fi
+	done <<< "$tag_sigs"
 
-	[[ "${sig_count}" -ge "${threshold}" ]] || {
-		echo "Minimum git signatures not found: ${sig_count}/${threshold}";
-		return 1;
-	}
+	note_sigs=$(verify_git_notes)
+	[[ $? == 0 ]] && while IFS= read -r line; do
+		IFS=':' read -r -a sig <<< "$line"
+		fp="${sig[1]}"
+		uid="${sig[5]}"
+		echo "Verified signed git note by \"${uid}\""
+		if [[ "${seen_fps}" != *"${fp}"* ]]; then
+			seen_fps+=" ${fp}"
+		fi
+	done <<< "$note_sigs"
 
-	if [ ! -z "$group" ]; then
-		for seen_fp in ${seen_fps}; do
+	for fp in ${seen_fps}; do
+		if [ ! -z "$group" ]; then
 			group_check_fp "${seen_fp}" "${group}" || {
 				echo "Git signing key not in group \"${group}\": ${fp}";
 				return 1;
 			}
-		done
-	fi
+		fi
+		((sig_count=sig_count+1))
+	done
 
-	if [[ $(git diff --stat) != '' ]]; then
-		die "Error: git tree is dirty"
-	fi
-
+	[[ "${sig_count}" -ge "${threshold}" ]] || {
+		echo "Minimum unique signatures not found: ${sig_count}/${threshold}";
+		return 1;
+	}
 }
 
 ## Get temporary dir reliably across different mktemp implementations
@@ -332,7 +416,6 @@ get_temp(){
 		--quiet \
 		--directory
 }
-
 
 ## Verify specified branch and show diff between that and current HEAD
 verify_git_diff(){
@@ -353,58 +436,18 @@ verify_git_diff(){
 	if verify "${threshold}" "${group}" "${method}"; then
 		git --no-pager diff "${diff_ref}" "${curr_ref}"
 	else
-		echo "Verification of specifed diff ref failed: ${ref}"
+		echo "Verification of specified diff ref failed: ${ref}"
 	fi
 }
 
 ## Verify current folder/repo with specified signing rules
 verify(){
-	[ $# -eq 3 ] || die "Usage: verify <threshold> <group> <method>"
+	[ $# -eq 3 ] || die "Usage: verify <threshold> <group>"
 	local -r threshold=${1}
 	local -r group=${2}
-	local -r method=${3}
-	if [ -z "$method" ] || [ "$method" == "git" ]; then
-		if [ "$method" == "git" ]; then
-			command -v git >/dev/null 2>&1 \
-				|| die "Error: method 'git' specified and git is not installed"
-			[ -d .git ] \
-				|| die "Error: This folder is not a git repository"
-		fi
-		if command -v git >/dev/null 2>&1 \
-			&& ( [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1 );
-		then
-			verify_git "${threshold}" "${group}" || return 1
-		fi
-	fi
-
-	if [ -z "$method" ] || [ "$method" == "detached" ]; then
-	    if [ "$method" == "detached" ]; then
-		    ( [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 \
-            ) || {
-				echo "Error: method 'detached' and no signatures found";
-				return 1;
-		    }
-        fi
-		if ( \
-            [ -d ".${PROGRAM}" ] && ls ."${PROGRAM}"/*.asc >/dev/null 2>&1 \
-        ); then
-		    cmd_manifest || return 1;
-		    verify_detached "${threshold}" "${group}" ."${PROGRAM}"/manifest.txt \
-			|| return 1;
-        fi
-	fi
-}
-
-## Add detached signature for contents of this folder
-sign_detached(){
-	cmd_manifest
-	gpg --armor --detach-sig ."${PROGRAM}"/manifest.txt >/dev/null 2>&1
-	local -r fp=$( \
-		gpg --list-packets ."${PROGRAM}"/manifest.txt.asc \
-			| grep "issuer key ID" \
-			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
-	)
-	mv ."${PROGRAM}"/manifest.{"txt.asc","${fp}.asc"}
+	[ -d .git ] \
+		|| die "Error: This folder is not a git repository"
+	verify_git "${threshold}" "${group}" || return 1
 }
 
 ## Add signed tag pointing at this commit.
@@ -424,9 +467,29 @@ sign_tag(){
 	)
 	local -r name="sig-${commit}-${fp}"
 	git tag -fsm "$name" "$name"
-	[[ $push -eq 0 ]] || git push --tags
+	[[ "$push" -eq "0" ]] || $PROGRAM push
 }
 
+## Add signed git note to this commit
+## Optionally push to origin.
+sign_note() {
+	[ -d '.git' ] \
+		|| die "Not a git repository"
+	command -v git >/dev/null \
+		|| die "Git not installed"
+	git config --get user.signingKey >/dev/null \
+		|| die "Git user.signingKey not set"
+	local -r push="${1}"
+	local -r key=$( \
+		git config --get user.signingKey \
+			| sed 's/.*\([A-Z0-9]\{16\}\).*/\1/g' \
+	)
+	local -r commit=$(git rev-parse HEAD)
+
+	sig_generate "$commit" | git notes --ref signatures append --file=-
+
+	[[ "$push" -eq "0" ]] || $PROGRAM push
+}
 
 
 ## Public Commands
@@ -513,17 +576,14 @@ cmd_add(){
 		--) shift; break ;;
 	esac done
 	case $method in
-		detached) sign_detached ;;
-		git) sign_tag "$push" ;;
-		*)
-			[ ! -z "$push" ] || cmd_usage
-			if [ -d '.git' ]; then
-				sign_tag "$push"
-			else
-				sign_detached
-			fi
-		;;
+		git) sign_note "$push" ;;
+		*) sign_note "$push" ;;
 	esac
+}
+
+cmd_push() {
+	[ "$#" -eq 0 ] || { usage push; exit 1; }
+	git push --tags origin refs/notes/signatures
 }
 
 cmd_version() {
@@ -531,7 +591,7 @@ cmd_version() {
 	==============================================
 	=  sig: simple multisig trust toolchain      =
 	=                                            =
-	=                  v0.0.1                    =
+	=                  v0.2                      =
 	=                                            =
 	= https://github.com/distrust-foundation/sig =
 	==============================================
@@ -542,14 +602,12 @@ cmd_usage() {
 	cmd_version
 	cat <<-_EOF
 	Usage:
-	    $PROGRAM add [-m,--method=<git|detached>] [-p,--push]
-	        Add signature to manifest for this directory
-	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [-m,--method=<git|detached> ] [d,--diff=<branch>]
+	    $PROGRAM add [-m,--method=<note|tag>] [-p,--push]
+	        Add signature for this repository
+	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [d,--diff=<branch>]
 	        Verify m-of-n signatures by given group are present for directory.
 	    $PROGRAM fetch [-g,--group=<group>]
 	    	Fetch key by fingerprint. Optionally add to group.
-	    $PROGRAM manifest
-	        Generate hash manifest for this directory
 	    $PROGRAM help
 	        Show this text.
 	    $PROGRAM version
@@ -558,7 +616,7 @@ cmd_usage() {
 }
 
 # Verify all tools in this list are installed at needed versions
-check_tools head cut find sort sed getopt gpg openssl
+check_tools git head cut find sort sed getopt gpg openssl
 
 # Allow entire script to be namespaced based on filename
 readonly PROGRAM="${0##*/}"
@@ -569,6 +627,7 @@ case "$1" in
 	add)               shift; cmd_add      "$@" ;;
 	manifest)          shift; cmd_manifest "$@" ;;
 	fetch)             shift; cmd_fetch    "$@" ;;
+	push)              shift; cmd_push    "$@" ;;
 	version|--version) shift; cmd_version  "$@" ;;
 	help|--help)       shift; cmd_usage    "$@" ;;
 	*)                        cmd_usage    "$@" ;;

@@ -15,7 +15,7 @@ load test_helper
 @test "Outputs version if run with version" {
 	run sig version
 	[ "$status" -eq 0 ]
-	echo "${output}" | grep "v0.0.1"
+	echo "${output}" | grep "v0.2"
 }
 
 @test "Outputs advice to install missing openssl" {
@@ -36,34 +36,6 @@ load test_helper
 	echo "${output}" | grep "apt install getopt"
 }
 
-@test "Can generate manifest for git repo" {
-	set_identity "user1"
-	echo "test string" > somefile
-	git init
-	git add .
-	git commit -m "initial commit"
-	sig manifest
-	run grep -q "1" <(wc -l .sig/manifest.txt)
-	[ "$status" -eq 0 ]
-	run grep 37d2046a395cbfc .sig/manifest.txt
-	[ "$status" -eq 0 ]
-}
-
-@test "Can generate manifest for folder with git not installed" {
-	sudo rm /usr/bin/git
-	echo "test string" > somefile
-	sig manifest
-	run grep 37d2046a395cbfc .sig/manifest.txt
-	[ "$status" -eq 0 ]
-}
-
-@test "Can generate manifest for folder with git installed" {
-	echo "test string" > somefile
-	sig manifest
-	run grep 37d2046a395cbfc .sig/manifest.txt
-	[ "$status" -eq 0 ]
-}
-
 @test "Verify fails if git is in use and tree is dirty" {
 	set_identity "user1"
 	echo "test string" > somefile
@@ -71,22 +43,22 @@ load test_helper
 	git add .
 	git commit -m "initial commit"
 	echo "dirty" > somefile
-	run sig verify --method="git"
+	run sig verify
 	[ "$status" -eq 1 ]
 }
 
 @test "Exit 1 if git method requested but not a repo" {
-	run sig verify --method="git"
+	run sig verify
 	[ "$status" -eq 1 ]
 }
 
-@test "Verify succeeds when 1 unique git sig requirement is satisifed" {
+@test "Verify succeeds when 1 unique git sig requirement is satisfied" {
 	set_identity "user1"
 	echo "test string" > somefile
 	git init
 	git add .
 	git commit -m "initial commit"
-	run sig verify --method git
+	run sig verify
 	[ "$status" -eq 0 ]
 }
 
@@ -101,7 +73,7 @@ load test_helper
 	sig add
 	set_identity "user3"
 	sig add
-	run sig verify --method git --threshold 3
+	run sig verify --threshold 3
 	[ "$status" -eq 0 ]
 }
 
@@ -112,7 +84,7 @@ load test_helper
 	git add .
 	git commit -m "user1 commit"
 	sig add
-	run sig verify --method git --threshold 2
+	run sig verify --threshold 2
 	[ "$status" -eq 1 ]
 }
 
@@ -123,7 +95,7 @@ load test_helper
 	git add .
 	git commit -m "initial commit"
 	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
-	run sig verify --method git --group maintainers
+	run sig verify --group maintainers
 	[ "$status" -eq 0 ]
 }
 
@@ -140,7 +112,7 @@ load test_helper
 	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
 	sig fetch --group maintainers BE4D60F6CFD2237A8AF978583C51CADD33BD0EE8
 	sig fetch --group maintainers 3E45AC9E190B4EE32BAE9F61A331AFB540761D69
-	run sig verify --method git --threshold 3 --group maintainers
+	run sig verify --threshold 3 --group maintainers
 	[ "$status" -eq 0 ]
 }
 
@@ -150,59 +122,8 @@ load test_helper
 	git init
 	git add .
 	git commit -m "initial commit"
-	run sig verify --method git --threshold 2 --group maintainers
-	[ "$status" -eq 1 ]
-}
-
-@test "Verify succeeds when 1 unique detached sig requirement is satisifed" {
-	set_identity "user1"
-	run sig add
-	run sig verify --method detached
-	[ "$status" -eq 0 ]
-}
-
-@test "Verify succeeds when 2 unique detached sig requirement is satisifed" {
-	set_identity "user1"
-	run sig add
-	set_identity "user2"
-	run sig add
-	run sig verify --threshold 2 --method detached
-	[ "$status" -eq 0 ]
-}
-
-@test "Verify fails when 2 unique detached sig requirement is not satisifed" {
-	set_identity "user1"
-	run sig add
-	run sig verify --threshold 2 --method detached
-	[ "$status" -eq 1 ]
-}
-
-@test "Verify succeeds when 1 group detached sig requirement is satisifed" {
-	set_identity "user1"
-	sig add
 	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
-	run sig verify --method detached --group maintainers
-	[ "$status" -eq 0 ]
-}
-
-@test "Verify succeeds when 3 group detached sig requirement is satisifed" {
-	set_identity "user1"
-	sig add
-	set_identity "user2"
-	sig add
-	set_identity "user3"
-	sig add
-	sig fetch --group maintainers AE08157232C35F04309FA478C5EBC4A7CF55A2D0
-	sig fetch --group maintainers BE4D60F6CFD2237A8AF978583C51CADD33BD0EE8
-	sig fetch --group maintainers 3E45AC9E190B4EE32BAE9F61A331AFB540761D69
-	run sig verify --method detached --threshold 3 --group maintainers
-	[ "$status" -eq 0 ]
-}
-
-@test "Verify fails when 2 group detached sig requirement is not satisifed" {
-	set_identity "user1"
-	sig add
-	run sig verify --method detached --threshold 2 --group maintainers
+	run sig verify --threshold 2 --group maintainers
 	[ "$status" -eq 1 ]
 }
 
