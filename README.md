@@ -1,17 +1,17 @@
-# Sig #
+# sig #
 
-The simple GPG signature toolchain for directories or git repos.
+The simple code signature toolchain for git repos.
 
 ## Features
 
-  * Generate sha256 manifest for all files in directory
-    * Use git for listing if available
-  * Add detached signatures to manifest
-  * Verify manifest has a minimum threshold of unique detached signatures
+  * Attach any number of signatures to any given git ref
   * Verify git history contains a minimum threshold of unique commit siguatures
   * Verify signatures belong to a defined GPG alias group
+  * Verify code changes made since last time minimum valid signatures were present
   * Allow user to manually verify new keys and add to alias groups on the fly
   * Prompt user to install or upgrade any required tools as needed
+  * Signs aginst git agnostic "tree hash" so signatures survive rebases
+    * So long as the directory contents at a given ref do not change
 
 ## Install
 
@@ -88,6 +88,12 @@ sig verify --threshold 2
 ```
 sig verify --threshold 3 --group myteam
 ```
+
+#### Show diff between HEAD and last ref with 2 verified unique signatures
+
+```
+sig verify --threshold 2 --diff
+`
 
 #### Add signature
 
