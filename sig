@@ -351,7 +351,7 @@ verify(){
 	local -r group="${2}"
 	local -r ref=${3:-HEAD}
 	local sig_count=0 seen_fps fp commit_sig tag_sigs note_sigs
-	[ -d .git ] \
+	[ -d .git ] || [ -L .git ] || [ -f .git ] \
 		|| die "Error: This folder is not a git repository"
     if [[ $(git diff --stat) != '' ]]; then
 		die "Error: git tree is dirty"
