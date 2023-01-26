@@ -5,7 +5,6 @@ readonly MIN_BASH_VERSION=5
 readonly MIN_GPG_VERSION=2.2
 readonly MIN_OPENSSL_VERSION=1.1
 readonly MIN_GETOPT_VERSION=2.33
-readonly DATE=$(command -v gdate || command -v date)
 
 ## Private Functions
 
@@ -39,7 +38,7 @@ die_pkg() {
 		*) die "Error: Your operating system is not supported" ;;
 	esac
 	echo "Error: ${package} ${version}+ does not appear to be installed." >&2
-	[ ! -z "$install_cmd" ] && echo "Try: \`${install_cmd}\`"  >&2
+	[ -n "$install_cmd" ] && echo "Try: \`${install_cmd}\`"  >&2
 	exit 1
 }
 
@@ -210,19 +209,19 @@ group_check_fp(){
 
 tree_hash() {
 	local -r ref="${1:-HEAD}"
-	local -r target=$(git rev-parse ${ref})
+	local -r target=$(git rev-parse "$ref")
 	local -r current=$(git rev-parse HEAD)
-	[ "$target" == "$current" ] || git checkout ${target} >/dev/null 2>&1
+	[ "$target" == "$current" ] || git checkout "$target" >/dev/null 2>&1
 	mkdir -p ".${PROGRAM}"
 	printf "%s" "$( \
 			find . -type f -not -path "./.git/*" \
-			| xargs openssl sha256 -r \
+			    -exec openssl sha256 -r {} \;\
 		)" \
 		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
 		| LC_ALL=C sort -k2 \
 		| openssl sha256 -r \
 		| sed -e 's/ .*//g'
-	[ "$target" == "$current" ] || git checkout ${current} >/dev/null 2>&1
+	[ "$target" == "$current" ] || git checkout "$current" >/dev/null 2>&1
 }
 
 sig_generate(){
@@ -239,14 +238,14 @@ sig_generate(){
 			--local-user "$key" \
 		| openssl base64 -A \
 	)
-	printf "$body:$signature"
+	printf "%s" "$body:$signature"
 }
 
 parse_gpg_status() {
 	local -r gpg_status="$1"
 	local -r error="$2"
 	while read -r values; do
-		local key array sip_fp sig_date sig_status sig_author sig_body
+		local key array sig_fp sig_date sig_status sig_author sig_body
 		IFS=" " read -r -a array <<< "$values"
 		key=${array[1]}
 		case $key in
@@ -273,17 +272,16 @@ parse_gpg_status() {
 			;;
 		esac
 	done <<< "$gpg_status"
-	sig_fp=$(get_primary_fp $sig_fp)
+	sig_fp=$(get_primary_fp "$sig_fp")
 	sig_body="pgp:$sig_fp:$sig_status:$sig_trust:$sig_date:$sig_author:$error"
-	printf "$sig_body"
-
+	printf "%s" "$sig_body"
 }
 
 verify_git_note(){
 	local -r line="${1}"
 	local -r ref="${2:-HEAD}"
-	local -r commit=$(git rev-parse ${ref})
-	IFS=':' line_parts=($line)
+	local -r commit=$(git rev-parse "$ref")
+	IFS=':' read -r -a line_parts <<< "$line"
 	local -r identifier=${line_parts[0]}
 	local -r version=${line_parts[1]}
 	local -r vcs_hash=${line_parts[2]}
@@ -307,7 +305,7 @@ verify_git_note(){
 	[[ "$vcs_hash" == "$commit" ]] || {
 		error="COMMIT_NOMATCH"
 	}
-	commit_tree_hash="$(tree_hash ${commit})"
+	commit_tree_hash=$(tree_hash "$commit")
 	[[ "$tree_hash" == "$commit_tree_hash" ]] || {
 		error="TREEHASH_NOMATCH;$commit;$tree_hash;$commit_tree_hash";
 	}
@@ -316,10 +314,10 @@ verify_git_note(){
 
 verify_git_notes(){
 	local -r ref="${1:-HEAD}"
-	local -r commit=$(git rev-parse ${ref})
+	local -r commit=$(git rev-parse "$ref")
 	local code=1
 	while IFS='' read -r line; do
-		printf "$(verify_git_note "$line" "$ref")\n"
+		printf "%s\n" "$(verify_git_note "$line" "$ref")"
 		code=0
 	done < <(git notes --ref signatures show "$commit" 2>&1 | grep "^sig:")
 	return $code
@@ -328,16 +326,16 @@ verify_git_notes(){
 verify_git_commit(){
 	local -r ref="${1:-HEAD}"
 	local gpg_sig_raw
-	gpg_sig_raw=$(git verify-commit ${ref} --raw 2>&1)
+	gpg_sig_raw=$(git verify-commit "$ref" --raw 2>&1)
 	parse_gpg_status "$gpg_sig_raw"
 }
 
 verify_git_tags(){
-	local fps="" git_sig_raw code=1
+	local gpg_sig_raw code=1
 	for tag in $(git tag --points-at HEAD); do
 		git tag --verify "$tag" >/dev/null 2>&1 && {
 			gpg_sig_raw=$( git verify-tag --raw "$tag" 2>&1 )
-			printf "$(parse_gpg_status "$gpg_sig_raw")\n"
+			printf "%s\n" "$(parse_gpg_status "$gpg_sig_raw")"
 			code=0
 		}
 	done
@@ -352,7 +350,7 @@ verify(){
 	local -r threshold="${1}"
 	local -r group="${2}"
 	local -r ref=${3:-HEAD}
-	local sig_count=0 seen_fps="" fp="" tag_fps="" note_fps=""
+	local sig_count=0 seen_fps fp commit_sig tag_sigs note_sigs
 	[ -d .git ] \
 		|| die "Error: This folder is not a git repository"
     if [[ $(git diff --stat) != '' ]]; then
@@ -364,12 +362,12 @@ verify(){
 		IFS=':' read -r -a sig <<< "$commit_sig"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
-		echo "Verified signed git commit by \"${uid}\""
+		echo "Verified signed git commit by \"$uid\""
 		seen_fps="${fp}"
 	fi
 
-	tag_sigs=$(verify_git_tags "$ref")
-	[[ $? == 0 ]] && while IFS= read -r line; do
+	tag_sigs=$(verify_git_tags "$ref") && \
+    while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
@@ -379,8 +377,8 @@ verify(){
 		fi
 	done <<< "$tag_sigs"
 
-	note_sigs=$(verify_git_notes "$ref")
-	[[ $? == 0 ]] && while IFS= read -r line; do
+	note_sigs=$(verify_git_notes "$ref") && \
+    while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
@@ -395,10 +393,10 @@ verify(){
 		fi
 	done <<< "$note_sigs"
 
-	for fp in ${seen_fps}; do
-		if [ ! -z "$group" ]; then
+	for seen_fp in ${seen_fps}; do
+		if [ -n "$group" ]; then
 			group_check_fp "${seen_fp}" "${group}" || {
-				echo "Git signing key not in group \"${group}\": ${fp}";
+				echo "Git signing key not in group \"${group}\": ${seen_fp}";
 				return 1;
 			}
 		fi
@@ -479,7 +477,7 @@ cmd_verify() {
 	esac done
 
 	local -r head=$(git rev-parse --short HEAD)
-	if [ ! -z "$diff" ] && [ -z "$ref" ]; then
+	if [ -n "$diff" ] && [ -z "$ref" ]; then
 		while read -r commit; do
 			echo "Checking commit: $commit"
 			if verify "$threshold" "$group" "$commit"; then
@@ -489,7 +487,7 @@ cmd_verify() {
 		done <<< "$(git log --show-notes=signatures --pretty=format:"%H")"
 	else
 		if verify "$threshold" "$group" "$ref"; then
-			if [ ! -z "$diff" ] && [ ! -z "$ref" ]; then
+			if [ -n "$diff" ] && [ -n "$ref" ]; then
 				local -r commit=$(git rev-parse --short "${ref}")
 				[ "${commit}" != "${head}" ] && \
 					git --no-pager diff "${commit}" "${head}"
@@ -512,7 +510,7 @@ cmd_fetch() {
 		die "Usage: $PROGRAM fetch <fingerprint> [-g,--group=<group>]"
 	local -r fingerprint=${1}
 
-	if [ ! -z "$group" ]; then
+	if [ -n "$group" ]; then
 		group_fps=$(group_get_fps "${group_name}")
 		if [[ "${group_fps}" == *"${fingerprint}"* ]]; then
 			echo "Key \"${fingerprint}\" is already in group \"${group}\""
