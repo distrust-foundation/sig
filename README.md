@@ -23,18 +23,18 @@ The simple code signature toolchain for git repos.
 
   2. Review source code and signatures manually
 
-      Using sig to verify the signatures of sig itself is not recommended.
+      Using `sig` to verify the signatures of `sig` itself is not recommended.
 
       Consider using the following one liner which is much faster to review:
       ```
       while read -r line; do \
         gpg --verify \
-          <(printf $line | sed 's/.*pgp://g'| openssl base64 -d -A) \
-          <(printf $line | sed 's/pgp:.*/pgp/g'); \
+          <(printf "$line" | sed 's/.*pgp://g'| openssl base64 -d -A) \
+          <(printf "$line" | sed 's/pgp:.*/pgp/g'); \
       done < <(git notes --ref=signatures show)
       ```
 
-  3. Copy to $PATH
+  3. Copy to `$PATH`
 
       ```
       cp sig ~/.local/bin/
@@ -43,7 +43,7 @@ The simple code signature toolchain for git repos.
 ## Usage
 
 * sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-r,--ref=<ref> ] [-d,--diff=<branch>]
-  * Verify m-of-n signatures by given group are present for a git repo or ref
+  * Verify m-of-n signatures by given group are present for a given git ref.
 * sig add
   * Add signature to this git ref
 * sig fetch [-g,--group=<group>]
