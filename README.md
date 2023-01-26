@@ -93,7 +93,7 @@ sig verify --threshold 3 --group myteam
 
 ```
 sig verify --threshold 2 --diff
-`
+```
 
 #### Add signature
 
