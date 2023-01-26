@@ -557,6 +557,8 @@ cmd_add(){
 
 cmd_push() {
 	[ "$#" -eq 0 ] || { usage push; exit 1; }
+    git fetch origin refs/notes/signatures:refs/notes/origin/signatures
+    git notes --ref signatures merge -s cat_sort_uniq origin/signatures
 	git push --tags origin refs/notes/signatures
 }
 
