@@ -209,19 +209,7 @@ group_check_fp(){
 
 tree_hash() {
 	local -r ref="${1:-HEAD}"
-	local -r target=$(git rev-parse "$ref")
-	local -r current=$(git rev-parse HEAD)
-	[ "$target" == "$current" ] || git checkout "$target" >/dev/null 2>&1
-	mkdir -p ".${PROGRAM}"
-	printf "%s" "$( \
-			find . -type f -not -path "./.git/*" \
-			    -exec openssl sha256 -r {} \;\
-		)" \
-		| sed -e 's/ \*/ /g' -e 's/ \.\// /g' \
-		| LC_ALL=C sort -k2 \
-		| openssl sha256 -r \
-		| sed -e 's/ .*//g'
-	[ "$target" == "$current" ] || git checkout "$current" >/dev/null 2>&1
+    git rev-parse "${ref}^{tree}"
 }
 
 sig_generate(){
@@ -387,7 +375,7 @@ verify(){
 			echo "Error: $error";
 			return 1;
 		}
-		echo "Verified signed git note commit by \"${uid}\""
+		echo "Verified signed git note by \"${uid}\""
 		if [[ "${seen_fps}" != *"${fp}"* ]]; then
 			seen_fps+=" ${fp}"
 		fi
@@ -461,8 +449,11 @@ sign_note() {
 	[[ "$push" -eq "0" ]] || $PROGRAM push
 }
 
-
 ## Public Commands
+
+cmd_remove() {
+    git notes --ref signatures remove
+}
 
 cmd_verify() {
 	local opts threshold=1 group="" method="" diff=""
@@ -580,6 +571,8 @@ cmd_usage() {
 	Usage:
 	    $PROGRAM add [-m,--method=<note|tag>] [-p,--push]
 	        Add signature for this repository
+	    $PROGRAM remove
+	    	Remove all signatures on current ref
 	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [d,--diff=<branch>]
 	        Verify m-of-n signatures by given group are present for directory.
 	    $PROGRAM fetch [-g,--group=<group>]
@@ -601,8 +594,9 @@ readonly PROGRAM="${0##*/}"
 case "$1" in
 	verify)            shift; cmd_verify   "$@" ;;
 	add)               shift; cmd_add      "$@" ;;
+	remove)            shift; cmd_remove   "$@" ;;
 	fetch)             shift; cmd_fetch    "$@" ;;
-	push)              shift; cmd_push    "$@" ;;
+	push)              shift; cmd_push     "$@" ;;
 	version|--version) shift; cmd_version  "$@" ;;
 	help|--help)       shift; cmd_usage    "$@" ;;
 	*)                        cmd_usage    "$@" ;;
