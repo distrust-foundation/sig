@@ -8,7 +8,7 @@ setup(){
 	bin_dir=/tmp/bin
 	temp_dir=$(mktemp -d -t test-XXXXXXXXXX)
 	mkdir -p /tmp/bin
-	ln -sfn /home/test/sig/sig /tmp/bin/sig
+	ln -sfn /home/test/sig/git-sig /tmp/bin/git-sig
 	export PATH=${bin_dir}:${PATH}
 	cd "$temp_dir" || return 1
 	rm -rf ~/.gnupg

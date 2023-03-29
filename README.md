@@ -1,6 +1,6 @@
-# sig #
+# git-sig #
 
-The simple code signature toolchain for git repos.
+The simple multisig toolchain for git repos.
 
 ## Features
 
@@ -10,7 +10,7 @@ The simple code signature toolchain for git repos.
   * Verify code changes made since last time minimum valid signatures were present
   * Allow user to manually verify new keys and add to alias groups on the fly
   * Prompt user to install or upgrade any required tools as needed
-  * Signs aginst git agnostic "tree hash" so signatures survive rebases
+  * Signs notes against git "tree hash" so signatures survive a rebase
     * So long as the directory contents at a given ref do not change
 
 ## Install
@@ -18,12 +18,13 @@ The simple code signature toolchain for git repos.
   1. Clone
 
       ```
-      git clone git@gitlab.com/pchq/sig.git sig
+      git clone https://codeberg.org/distrust/git-sig.git
       ```
 
   2. Review source code and signatures manually
 
-      Using `sig` to verify the signatures of `sig` itself is not recommended.
+      Using `git-sig` to verify the signatures of `git-sig` itself is not
+      recommended as it could simply lie to you.
 
       Consider using the following one liner which is much faster to review:
       ```
@@ -37,68 +38,75 @@ The simple code signature toolchain for git repos.
   3. Copy to `$PATH`
 
       ```
-      cp sig ~/.local/bin/
+      cp git-sig ~/.local/bin/
       ```
 
 ## Usage
 
-* sig verify [-g,--group=<group>] [-t,--threshold=<N>] [-r,--ref=<ref> ] [-d,--diff=<branch>]
-  * Verify m-of-n signatures by given group are present for a given git ref.
-* sig add
-  * Add signature to this git ref
-* sig fetch [-g,--group=<group>]
-  * Fetch key by fingerprint. Optionally add to group.
-* sig help
-  * Show help text.
-* sig version
-  * Show version information.
+```
+git sig add [-m,--method=<note|tag>] [-p,--push]
+    Add signature for this repository
+git sig remove
+    Remove all signatures on current ref
+git sig verify [-g,--group=<group>] [-t,--threshold=<N>] [d,--diff=<branch>]
+    Verify m-of-n signatures by given group are present for directory.
+git sig push [-r,--remote=<remote>]
+    Push all signatures on current ref
+git sig fetch [-g,--group=<group>]
+    Fetch key by fingerprint. Optionally add to group.
+git sig help
+    Show this text.
+git sig version
+	Show version information.
+```
 
 ## Methods
 
-### Git
-
-This method verifies the current HEAD was signed exactly as-is by one or more
-keys.
-
-This counts the commit signature, and any number of signed tags pointing at
-this ref.
+* Note
+    * Store/Verify signatures via Git Notes (default)
+    * Can be exported and verified by external tools even without git history
+* Tag
+    * Any git signed tags count towards total signatures
+    * Can optionally store new signatures as "sig-*" signed tag
+* Commit
+    * Signed commits count as one valid signature
 
 ### Assumptions
   - Single sig mode: Repo contents controlled by signer
   - Multi-sig mode: Repo contents verified by multiple signers
   - Multi-sig group mode: Repo contents approved by specified individuals
-  - Hashing scheme for respective backend is not broken: (sha256)
+  - Hashing scheme is not broken: (SHA1, blame Torvalds)
 
 ## Examples
 
 #### Verify at least one signature is present with a known key
 
 ```
-sig verify
+git sig verify
 ```
 
 #### Verify 2 unique signatures from known keys
 
 ```
-sig verify --threshold 2
+git sig verify --threshold 2
 ```
 
 #### Verify 3 unique signatures from specified signing group
 
 ```
-sig verify --threshold 3 --group myteam
+git sig verify --threshold 3 --group myteam
 ```
 
 #### Show diff between HEAD and last ref with 2 verified unique signatures
 
 ```
-sig verify --threshold 2 --diff
+git sig verify --threshold 2 --diff
 ```
 
 #### Add signature
 
 ```
-sig add
+git sig add
 ```
 
 ## Frequently Asked Questions
