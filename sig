@@ -340,8 +340,8 @@ verify(){
 	local -r ref=${3:-HEAD}
 	local sig_count=0 seen_fps fp commit_sig tag_sigs note_sigs
 	[ -d .git ] || [ -L .git ] || [ -f .git ] \
-		|| die "Error: This folder is not a git repository"
-    if [[ $(git diff --stat) != '' ]]; then
+	    || die "Error: This folder is not a git repository"
+	if [[ $(git diff --stat) != '' ]]; then
 		die "Error: git tree is dirty"
 	fi
 
@@ -355,7 +355,7 @@ verify(){
 	fi
 
 	tag_sigs=$(verify_git_tags "$ref") && \
-    while IFS= read -r line; do
+	while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
@@ -366,7 +366,7 @@ verify(){
 	done <<< "$tag_sigs"
 
 	note_sigs=$(verify_git_notes "$ref") && \
-    while IFS= read -r line; do
+	while IFS= read -r line; do
 		IFS=':' read -r -a sig <<< "$line"
 		fp="${sig[1]}"
 		uid="${sig[5]}"
@@ -516,19 +516,20 @@ cmd_fetch() {
 
 	echo "Requested key is not in keyring. Trying keyservers..."
 	for server in \
-        ha.pool.sks-keyservers.net \
-        hkp://keyserver.ubuntu.com:80 \
-        hkp://p80.pool.sks-keyservers.net:80 \
-        pgp.mit.edu \
-    ; do
-        echo "Fetching key \"${fingerprint}\" from \"${server}\"";
-       	gpg \
-       		--recv-key \
-       		--keyserver "$server" \
-       		--keyserver-options timeout=10 \
-       		--recv-keys "${fingerprint}" \
-       	&& break
-    done
+		keys.openpgp.org \
+		ha.pool.sks-keyservers.net \
+		hkp://keyserver.ubuntu.com:80 \
+		hkp://p80.pool.sks-keyservers.net:80 \
+		pgp.mit.edu \
+	; do
+		echo "Fetching key \"${fingerprint}\" from \"${server}\"";
+		gpg \
+			--recv-key \
+			--keyserver "$server" \
+			--keyserver-options timeout=10 \
+			--recv-keys "${fingerprint}" \
+			&& break
+	done
 }
 
 cmd_add(){
