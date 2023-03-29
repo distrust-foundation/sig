@@ -209,7 +209,7 @@ group_check_fp(){
 
 tree_hash() {
 	local -r ref="${1:-HEAD}"
-    git rev-parse "${ref}^{tree}"
+	git rev-parse "${ref}^{tree}"
 }
 
 sig_generate(){
@@ -339,7 +339,7 @@ verify(){
 	local -r group="${2}"
 	local -r ref=${3:-HEAD}
 	local sig_count=0 seen_fps fp commit_sig tag_sigs note_sigs
-	[ -d .git ] || [ -L .git ] || [ -f .git ] \
+	git rev-parse --git-dir >/dev/null 2>&1 \
 	    || die "Error: This folder is not a git repository"
 	if [[ $(git diff --stat) != '' ]]; then
 		die "Error: git tree is dirty"
@@ -411,7 +411,7 @@ get_temp(){
 ## Add signed tag pointing at this commit.
 ## Optionally push to origin.
 sign_tag(){
-	[ -d '.git' ] \
+	git rev-parse --git-dir >/dev/null 2>&1 \
 		|| die "Not a git repository"
 	command -v git >/dev/null \
 		|| die "Git not installed"
@@ -431,7 +431,7 @@ sign_tag(){
 ## Add signed git note to this commit
 ## Optionally push to origin.
 sign_note() {
-	[ -d '.git' ] \
+	git rev-parse --git-dir >/dev/null 2>&1 \
 		|| die "Not a git repository"
 	command -v git >/dev/null \
 		|| die "Git not installed"
@@ -452,7 +452,7 @@ sign_note() {
 ## Public Commands
 
 cmd_remove() {
-    git notes --ref signatures remove
+	git notes --ref signatures remove
 }
 
 cmd_verify() {
@@ -542,15 +542,16 @@ cmd_add(){
 		--) shift; break ;;
 	esac done
 	case $method in
-		git) sign_note "$push" ;;
+		note) sign_note "$push" ;;
+		tag) sign_tag "$push" ;;
 		*) sign_note "$push" ;;
 	esac
 }
 
 cmd_push() {
 	[ "$#" -eq 0 ] || { usage push; exit 1; }
-    git fetch origin refs/notes/signatures:refs/notes/origin/signatures
-    git notes --ref signatures merge -s cat_sort_uniq origin/signatures
+	git fetch origin refs/notes/signatures:refs/notes/origin/signatures
+	git notes --ref signatures merge -s cat_sort_uniq origin/signatures
 	git push --tags origin refs/notes/signatures
 }
 
@@ -573,11 +574,11 @@ cmd_usage() {
 	    $PROGRAM add [-m,--method=<note|tag>] [-p,--push]
 	        Add signature for this repository
 	    $PROGRAM remove
-	    	Remove all signatures on current ref
+	        Remove all signatures on current ref
 	    $PROGRAM verify [-g,--group=<group>] [-t,--threshold=<N>] [d,--diff=<branch>]
 	        Verify m-of-n signatures by given group are present for directory.
 	    $PROGRAM fetch [-g,--group=<group>]
-	    	Fetch key by fingerprint. Optionally add to group.
+	        Fetch key by fingerprint. Optionally add to group.
 	    $PROGRAM help
 	        Show this text.
 	    $PROGRAM version
