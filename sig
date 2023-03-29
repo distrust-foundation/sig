@@ -549,10 +549,16 @@ cmd_add(){
 }
 
 cmd_push() {
-	[ "$#" -eq 0 ] || { usage push; exit 1; }
-	git fetch origin refs/notes/signatures:refs/notes/origin/signatures
-	git notes --ref signatures merge -s cat_sort_uniq origin/signatures
-	git push --tags origin refs/notes/signatures
+	local opts remote="origin" push="0"
+	opts="$(getopt -o r: -l remote: -n "$PROGRAM" -- "$@")"
+	eval set -- "$opts"
+	while true; do case $1 in
+		-r|--remote) remote="$2"; shift 2 ;;
+		--) shift; break ;;
+	esac done
+	git fetch "$remote" refs/notes/signatures:refs/notes/"${remote}"/signatures
+	git notes --ref signatures merge -s cat_sort_uniq "${remote}"/signatures
+	git push --tags "$remote" refs/notes/signatures
 }
 
 cmd_version() {
