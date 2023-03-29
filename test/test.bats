@@ -180,7 +180,7 @@ load test_helper
 	set_identity "user2"
 	sig add
 
-    set_identity "user3"
+	set_identity "user3"
 	sig add
 
 	set_identity "user1"
